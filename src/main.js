@@ -30,10 +30,10 @@ const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
 const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 
 // ==== PERSISTENCIA CENTRAL (GOOGLE APPS SCRIPT) ==============================
-// Modo: si GAS_TOKEN está vacío => dominio corporativo (cookies) ; si no, público+token
-const PROJECT_ID   = 'pnl-lineage'; // cambia si quieres separar proyectos
-const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwG_pGw4tgQgmr-zMIaZyMcYwUv9aBh_vdKHeIa4aU5HbCYk_HtZmQ11DAAQlv2Egghkw/exec'; // p.ej: 'https://script.google.com/macros/s/XXXX/exec'
-const GAS_TOKEN    = '73y3g3vgu3dhiu23289279uriuhi2uk4b3ru2bu436fg623233'; // '' si usas "Anyone within dominio"; o token si usas "Anyone" público
+// Si GAS_TOKEN está vacío => modo dominio; si no => público con token
+const PROJECT_ID   = 'pnl-lineage';
+const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwG_pGw4tgQgmr-zMIaZyMcYwUv9aBh_vdKHeIa4aU5HbCYk_HtZmQ11DAAQlv2Egghkw/exec';
+const GAS_TOKEN    = '73y3g3vgu3dhiu23289279uriuhi2uk4b3ru2bu436fg623233';
 const IS_DOMAIN_MODE = !GAS_TOKEN;
 
 // ==== STATE =================================================================
@@ -486,7 +486,8 @@ function confetti({duration=1200, count=120} = {}){
 function celebrateSmall(){ confetti({ duration: 900,  count: 90  }); }
 function celebrateBig(){   confetti({ duration: 1800, count: 220 }); }
 
-// ==== DEBOUNCE & CLOUD SYNC =================================================
+// ==== CLOUD SYNC (con JSONP fallback y POST sin preflight) ===================
+// Debounce helper
 function debounce(fn, ms = 600){
   let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
 }
@@ -497,34 +498,62 @@ async function readJSON(resp){
   try { return JSON.parse(txt); } catch { return null; }
 }
 
-// Pull desde GAS
+// JSONP helper (fallback sin CORS)
+function jsonp(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const cb = '__gas_cb_' + Date.now() + '_' + (Math.random()*1e6|0);
+    const s  = document.createElement('script');
+    const t  = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, timeoutMs);
+    function cleanup(){
+      clearTimeout(t);
+      if (s.parentNode) s.parentNode.removeChild(s);
+      try { delete window[cb]; } catch(_) { window[cb] = undefined; }
+    }
+    window[cb] = (data) => { cleanup(); resolve(data); };
+    s.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
+    s.onerror = () => { cleanup(); reject(new Error('JSONP error')); };
+    document.head.appendChild(s);
+  });
+}
+
+// Pull desde GAS: intenta fetch; si falla, prueba JSONP
 async function pullStatusesFromCloud(){
+  const base = `${GAS_ENDPOINT}?project=${encodeURIComponent(PROJECT_ID)}&ts=${Date.now()}`;
+  // 1) fetch normal
   try{
-    const url = `${GAS_ENDPOINT}?project=${encodeURIComponent(PROJECT_ID)}&ts=${Date.now()}`;
-    const fetchOpts = IS_DOMAIN_MODE
-      ? { method: 'GET', credentials: 'include' } // dominio: envía cookies si están permitidas
-      : { method: 'GET' };                        // público
-    const r = await fetch(url, fetchOpts);
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await readJSON(r);
-    if(data && data.ok && data.statuses && typeof data.statuses === 'object'){
+    const r = await fetch(base, IS_DOMAIN_MODE ? { method:'GET', credentials:'include' } : { method:'GET' });
+    if (r.ok) {
+      const data = await readJSON(r);
+      if (data && data.ok && data.statuses && typeof data.statuses === 'object') {
+        statuses = data.statuses;
+        saveStatuses(statuses);
+        return true;
+      }
+    }
+  }catch(_){/* fallback */}
+
+  // 2) JSONP sin CORS
+  try{
+    const data = await jsonp(base);
+    if (data && data.ok && data.statuses && typeof data.statuses === 'object') {
       statuses = data.statuses;
       saveStatuses(statuses);
       return true;
     }
   }catch(_){}
+
   return false;
 }
 
-// Push a GAS
+// Push a GAS: text/plain evita preflight; no necesitamos leer respuesta
 async function pushStatusesToCloud(){
   try{
     const body = { project: PROJECT_ID, token: GAS_TOKEN, statuses };
     const fetchOpts = {
       method: 'POST',
-      headers: { 'Content-Type':'application/json' },
+      headers: { 'Content-Type':'text/plain;charset=utf-8' },
       body: JSON.stringify(body),
-      ...(IS_DOMAIN_MODE ? { credentials: 'include' } : {})
+      ...(IS_DOMAIN_MODE ? { credentials:'include' } : {})
     };
     await fetch(GAS_ENDPOINT, fetchOpts);
   }catch(_){}

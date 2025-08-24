@@ -304,7 +304,7 @@ impInput.onchange = async () => {
     await layoutAndRender();
     setStatus('Statuses imported', true);
   }catch(err){
-    setStatus('Invalid JSON: '+err.message', false);
+    setStatus('Invalid JSON: ' + err.message, false);
   }finally{
     impInput.value = '';
   }

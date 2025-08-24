@@ -13,7 +13,10 @@ const EDGE_MARKER  = {
   blocked: 'url(#arrow-blocked)',
   done:    'url(#arrow-done)'
 };
-const STORE_KEY = 'lineage-statuses-v1';
+
+// Base path (GH Pages) + storage key aislado por proyecto
+const BASE = import.meta.env.BASE_URL || '/';
+const STORE_KEY = 'lineage-statuses-v1::' + BASE;
 
 // Password config (elige uno):
 const EDIT_HASH  = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
@@ -24,8 +27,8 @@ const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 let graph = { nodes: [], edges: [] };
 let statuses = loadStatuses();
 let panzoom;
-let celebrated = false;
-let canEdit = false; // 🔒 bloqueado por defecto
+let celebrated = false;   // si ya celebramos el 100%
+let canEdit = false;      // 🔒 bloqueado por defecto
 
 // ---- DOM ----
 const svg       = document.getElementById('svg');
@@ -83,7 +86,7 @@ async function sha256Hex(s){
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// progress bar (✅ only DONE) + efectos
+// ---- Progreso (solo DONE) + efectos visuales ----
 function updateProgress(){
   const total = graph.nodes.length || 0;
   const done = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'done' ? 1 : 0), 0);
@@ -95,7 +98,7 @@ function updateProgress(){
   if (pct === 100 && !celebrated){
     celebrated = true;
     progFill.classList.add('is-complete');
-    celebrate();
+    celebrateBig(); // 🎉 fiesta grande al 100%
   } else if (pct < 100){
     celebrated = false;
     progFill.classList.remove('is-complete');
@@ -178,7 +181,7 @@ async function layoutAndRender(){
 
     // Draw nodes
     for (const n of res.children){
-      const status = statuses[n.id] || 'pending';
+      const status = (statuses[n.id] || 'pending');
       const color  = STATUS_COLOR[status] || STATUS_COLOR.pending;
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -215,10 +218,13 @@ async function layoutAndRender(){
       g.addEventListener('click', () => {
         if (!canEdit){ setStatus('Read-only. Click "Unlock" to enable editing.', false); return; }
         const order = STATUS_ORDER;
-        const cur = statuses[n.id] || 'pending';
-        const nxt = order[(order.indexOf(cur)+1) % order.length];
+        const prev = (statuses[n.id] || 'pending');
+        const nxt  = order[(order.indexOf(prev)+1) % order.length];
+
         statuses[n.id] = nxt;
         rect.setAttribute('fill', STATUS_COLOR[nxt] || STATUS_COLOR.pending);
+
+        // recolor edges whose source is this node
         for (const e of graph.edges){
           if (e.source === n.id){
             const p = edgePathById.get(e.id);
@@ -228,6 +234,10 @@ async function layoutAndRender(){
             }
           }
         }
+
+        // 🎊 Confeti pequeño cada vez que un nodo pasa a 'done'
+        if (prev !== 'done' && nxt === 'done') celebrateSmall();
+
         saveStatuses(statuses);
         updateProgress();
       });
@@ -294,7 +304,7 @@ impInput.onchange = async () => {
     await layoutAndRender();
     setStatus('Statuses imported', true);
   }catch(err){
-    setStatus('Invalid JSON: '+err.message, false);
+    setStatus('Invalid JSON: '+err.message', false);
   }finally{
     impInput.value = '';
   }
@@ -315,10 +325,10 @@ fileInput.onchange = async () => {
   fileInput.value = '';
 };
 
-// Auto-load de /public/lineage.csv si existe (si no, solo lectura)
+// Auto-load de /public/lineage.csv si existe (GH Pages usa BASE_URL)
 (async function boot(){
   try{
-    const r = await fetch('/lineage.csv', { cache: 'no-store' });
+    const r = await fetch(`${BASE}lineage.csv?ts=${Date.now()}`, { cache: 'no-store' });
     if (r.ok){
       const text = await r.text();
       const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
@@ -396,7 +406,7 @@ lockOk.onclick = async () => {
   }
 };
 
-// ---- Confetti minimal (canvas) ----
+// ---- Confetti utils ----
 function sizeFxToCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const rect = fxCanvas.getBoundingClientRect();
@@ -406,26 +416,25 @@ function sizeFxToCanvas(){
 }
 window.addEventListener('resize', sizeFxToCanvas, { passive:true });
 
-function celebrate(duration=1200){
+function confetti({duration=1200, count=120} = {}){
   sizeFxToCanvas();
   const W = fxCanvas.clientWidth, H = fxCanvas.clientHeight;
   const colors = [GLOVO_YELLOW, GLOVO_GREEN, '#ef4444', '#60a5fa'];
-  const N = Math.min(140, Math.floor((W*H)/16000));
+  const N = Math.min(count, Math.floor((W*H)/12000)); // escala con tamaño
 
   const parts = Array.from({length:N}).map(()=>({
     x: Math.random()*W,
     y: -10 - Math.random()*H*0.2,
-    vx: (Math.random()-0.5)*1.4,
-    vy: 1.5 + Math.random()*2.5,
+    vx: (Math.random()-0.5)*1.5,
+    vy: 1.8 + Math.random()*2.8,
     size: 3 + Math.random()*4,
     rot: Math.random()*Math.PI,
-    vr: (Math.random()-0.5)*0.2,
+    vr: (Math.random()-0.5)*0.22,
     color: colors[(Math.random()*colors.length)|0],
-    life: duration + Math.random()*300
   }));
 
   const start = performance.now();
-  function tick(now){
+  (function tick(now){
     const t = now - start;
     fxCtx.clearRect(0,0,W,H);
     for (const p of parts){
@@ -439,6 +448,11 @@ function celebrate(duration=1200){
     }
     if (t < duration){ requestAnimationFrame(tick); }
     else fxCtx.clearRect(0,0,W,H);
-  }
-  requestAnimationFrame(tick);
+  })(performance.now());
 }
+
+// 🎉 Pequeño: cada nodo que pasa a done
+function celebrateSmall(){ confetti({ duration: 900, count: 90 }); }
+
+// 🎉🎉 Grande: cuando llegas al 100%
+function celebrateBig(){ confetti({ duration: 1800, count: 220 }); }

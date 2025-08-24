@@ -23,25 +23,19 @@ const EDGE_MARKER  = {
 // ==== BASE URL (GH Pages) & STORAGE KEY =====================================
 const BASE = import.meta.env.BASE_URL || '/';
 const STORE_KEY = 'lineage-statuses-v1::' + BASE;
+const DEFAULTS_URL = `${BASE}lineage-statuses.json`; // <<-- aquí leemos los defaults
 
 // ==== PASSWORD / EDIT LOCK ===================================================
 const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
 const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
 const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 
-// ==== PERSISTENCIA CENTRAL (GOOGLE APPS SCRIPT) ==============================
-// Si GAS_TOKEN está vacío => modo dominio; si no => público con token
-const PROJECT_ID   = 'pnl-lineage';
-const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwG_pGw4tgQgmr-zMIaZyMcYwUv9aBh_vdKHeIa4aU5HbCYk_HtZmQ11DAAQlv2Egghkw/exec';
-const GAS_TOKEN    = '73y3g3vgu3dhiu23289279uriuhi2uk4b3ru2bu436fg623233';
-const IS_DOMAIN_MODE = !GAS_TOKEN;
-
 // ==== STATE =================================================================
 let graph = { nodes: [], edges: [] };
-let statuses = loadStatuses();
+let statuses = {};         // se carga en boot
 let panzoom;
-let celebrated = false;  // para el 100%
-let canEdit = false;     // 🔒 bloqueado por defecto
+let celebrated = false;    // para el 100%
+let canEdit = false;       // 🔒 bloqueado por defecto
 
 // ==== DOM ===================================================================
 const svg       = document.getElementById('svg');
@@ -55,7 +49,7 @@ const impLabel  = document.getElementById('imp-label');
 const btnZoomIn  = document.getElementById('zoom-in');
 const btnZoomOut = document.getElementById('zoom-out');
 const btnFit     = document.getElementById('fit');
-const btnReset   = document.getElementById('reset');
+const btnReset   = document.getElementById('reset');     // ahora: Reset a defaults
 const btnExport  = document.getElementById('btn-export');
 
 const progFill  = document.getElementById('prog-fill');
@@ -88,6 +82,17 @@ function saveStatuses(obj){
 function setStatus(msg, ok=true){
   statusBox.textContent = msg;
   statusBox.className = 'status ' + (ok ? 'ok' : 'err');
+}
+
+// leer defaults desde /public/lineage-statuses.json
+async function loadDefaultStatuses(){
+  try{
+    const r = await fetch(DEFAULTS_URL, { cache:'no-store' });
+    if (!r.ok) return {};
+    const txt = await r.text();
+    const obj = JSON.parse(txt);
+    return (obj && typeof obj === 'object') ? obj : {};
+  }catch(_){ return {}; }
 }
 
 // Medida de texto para tamaño de nodos
@@ -262,7 +267,6 @@ async function layoutAndRender(){
         if (prev !== 'done' && nxt === 'done') celebrateSmall();
 
         saveStatuses(statuses);
-        pushDebounced();   // 🔄 guarda en GAS (debounced)
         updateProgress();
       });
     }
@@ -293,20 +297,14 @@ btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
 btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
 btnFit.onclick     = () => panzoom && (panzoom.fit(), panzoom.center());
 
-btnReset.onclick = () => {
+// RESET: ahora vuelve a los defaults (no a gris)
+btnReset.onclick = async () => {
   if (!canEdit){ setStatus('Read-only. Unlock to reset.', false); return; }
-  statuses = {};
+  const defs = await loadDefaultStatuses();
+  statuses = { ...(defs || {}) };   // reset a defaults
   saveStatuses(statuses);
-  // recolor en caliente
-  for (const p of gNodes.querySelectorAll('rect')) p.setAttribute('fill', STATUS_COLOR.pending);
-  for (const p of gEdges.querySelectorAll('path')) {
-    p.setAttribute('stroke', STATUS_COLOR.pending);
-    p.setAttribute('marker-end', EDGE_MARKER.pending);
-  }
-  celebrated = false;
-  progFill.classList.remove('is-complete');
-  updateProgress();
-  pushDebounced(); // 🔄 subir reset
+  await layoutAndRender();
+  setStatus('Statuses reset to defaults', true);
 };
 
 btnExport.onclick = () => {
@@ -329,7 +327,6 @@ impInput.onchange = async () => {
     saveStatuses(statuses);
     await layoutAndRender();
     setStatus('Statuses imported', true);
-    pushDebounced(); // 🔄 subir import
   }catch(err){
     setStatus('Invalid JSON: ' + err.message, false);
   }finally{
@@ -352,23 +349,24 @@ fileInput.onchange = async () => {
   fileInput.value = '';
 };
 
-// ==== BOOT (autoload CSV + pull cloud) ======================================
+// ==== BOOT (autoload CSV + defaults + localStorage) ==========================
 (async function boot(){
   try{
+    // 1) CSV
     const r = await fetch(`${BASE}lineage.csv?ts=${Date.now()}`, { cache: 'no-store' });
-    if (r.ok){
-      const text = await r.text();
-      const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
-      graph = fromCsv(parsed.data);
+    if (!r.ok) throw new Error('CSV not found');
+    const text = await r.text();
+    const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
+    graph = fromCsv(parsed.data);
 
-      // intenta cargar estado centralizado
-      const loadedCloud = await pullStatusesFromCloud();
+    // 2) defaults + local
+    const defs = await loadDefaultStatuses();
+    const saved = loadStatuses();
+    statuses = Object.keys(saved).length ? saved : (defs || {});
+    saveStatuses(statuses); // asegura persistencia tras primer boot
 
-      await layoutAndRender();
-      if (loadedCloud) setStatus('Loaded cloud statuses', true);
-    } else {
-      setStatus('Ready. Upload a CSV to render.', true);
-    }
+    await layoutAndRender();
+    setStatus('Ready', true);
   }catch(_){
     setStatus('Ready. Upload a CSV to render.', true);
   }
@@ -380,7 +378,6 @@ function updateEditUI(){
   lockState.textContent = canEdit ? 'Edit mode' : 'Read-only';
   lockBtn.textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
 
-  // acciones que cambian estado
   btnExport.disabled = !canEdit;
   btnReset.disabled  = !canEdit;
 
@@ -400,7 +397,6 @@ lockBtn.onclick = () => {
     setStatus('Locked. Read-only.', true);
     return;
   }
-  // abrir modal
   modal.classList.remove('hidden');
   modal.setAttribute('aria-hidden','false');
   lockMsg.textContent = '';
@@ -485,77 +481,3 @@ function confetti({duration=1200, count=120} = {}){
 
 function celebrateSmall(){ confetti({ duration: 900,  count: 90  }); }
 function celebrateBig(){   confetti({ duration: 1800, count: 220 }); }
-
-// ==== CLOUD SYNC (con JSONP fallback y POST sin preflight) ===================
-// Debounce helper
-function debounce(fn, ms = 600){
-  let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
-}
-
-// parse seguro para GET
-async function readJSON(resp){
-  const txt = await resp.text();
-  try { return JSON.parse(txt); } catch { return null; }
-}
-
-// JSONP helper (fallback sin CORS)
-function jsonp(url, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    const cb = '__gas_cb_' + Date.now() + '_' + (Math.random()*1e6|0);
-    const s  = document.createElement('script');
-    const t  = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, timeoutMs);
-    function cleanup(){
-      clearTimeout(t);
-      if (s.parentNode) s.parentNode.removeChild(s);
-      try { delete window[cb]; } catch(_) { window[cb] = undefined; }
-    }
-    window[cb] = (data) => { cleanup(); resolve(data); };
-    s.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
-    s.onerror = () => { cleanup(); reject(new Error('JSONP error')); };
-    document.head.appendChild(s);
-  });
-}
-
-// Pull desde GAS: intenta fetch; si falla, prueba JSONP
-async function pullStatusesFromCloud(){
-  const base = `${GAS_ENDPOINT}?project=${encodeURIComponent(PROJECT_ID)}&ts=${Date.now()}`;
-  // 1) fetch normal
-  try{
-    const r = await fetch(base, IS_DOMAIN_MODE ? { method:'GET', credentials:'include' } : { method:'GET' });
-    if (r.ok) {
-      const data = await readJSON(r);
-      if (data && data.ok && data.statuses && typeof data.statuses === 'object') {
-        statuses = data.statuses;
-        saveStatuses(statuses);
-        return true;
-      }
-    }
-  }catch(_){/* fallback */}
-
-  // 2) JSONP sin CORS
-  try{
-    const data = await jsonp(base);
-    if (data && data.ok && data.statuses && typeof data.statuses === 'object') {
-      statuses = data.statuses;
-      saveStatuses(statuses);
-      return true;
-    }
-  }catch(_){}
-
-  return false;
-}
-
-// Push a GAS: text/plain evita preflight; no necesitamos leer respuesta
-async function pushStatusesToCloud(){
-  try{
-    const body = { project: PROJECT_ID, token: GAS_TOKEN, statuses };
-    const fetchOpts = {
-      method: 'POST',
-      headers: { 'Content-Type':'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      ...(IS_DOMAIN_MODE ? { credentials:'include' } : {})
-    };
-    await fetch(GAS_ENDPOINT, fetchOpts);
-  }catch(_){}
-}
-const pushDebounced = debounce(pushStatusesToCloud, 800);

@@ -32,7 +32,7 @@ const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 // ==== PERSISTENCIA CENTRAL (GOOGLE APPS SCRIPT) ==============================
 // Modo: si GAS_TOKEN está vacío => dominio corporativo (cookies) ; si no, público+token
 const PROJECT_ID   = 'pnl-lineage'; // cambia si quieres separar proyectos
-const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyPDpHhbECeC12X6wFKX0jxzf1pvw5fCFIcPpFJ5eq5XElYIyhUqeJpIAn5Hw7tZ0dD/exec'; // p.ej: 'https://script.google.com/macros/s/XXXX/exec'
+const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwG_pGw4tgQgmr-zMIaZyMcYwUv9aBh_vdKHeIa4aU5HbCYk_HtZmQ11DAAQlv2Egghkw/exec'; // p.ej: 'https://script.google.com/macros/s/XXXX/exec'
 const GAS_TOKEN    = ''; // '' si usas "Anyone within dominio"; o token si usas "Anyone" público
 const IS_DOMAIN_MODE = !GAS_TOKEN;
 

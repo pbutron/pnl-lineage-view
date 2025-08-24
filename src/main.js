@@ -2,11 +2,17 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import Papa from 'papaparse';
 import svgPanZoom from 'svg-pan-zoom';
 
-// ---- Brand/status config ----
+// ==== BRAND & STATUS =========================================================
 const GLOVO_YELLOW = '#FFC244';
 const GLOVO_GREEN  = '#00A082';
+
 const STATUS_ORDER = ['pending','wip','blocked','done'];
-const STATUS_COLOR = { pending:'#9ca3af', wip:GLOVO_YELLOW, blocked:'#ef4444', done:GLOVO_GREEN };
+const STATUS_COLOR = {
+  pending:'#9ca3af',
+  wip:    GLOVO_YELLOW,
+  blocked:'#ef4444',
+  done:   GLOVO_GREEN
+};
 const EDGE_MARKER  = {
   pending: 'url(#arrow-pending)',
   wip:     'url(#arrow-wip)',
@@ -14,23 +20,30 @@ const EDGE_MARKER  = {
   done:    'url(#arrow-done)'
 };
 
-// Base path (GH Pages) + storage key aislado por proyecto
+// ==== BASE URL (GH Pages) & STORAGE KEY =====================================
 const BASE = import.meta.env.BASE_URL || '/';
 const STORE_KEY = 'lineage-statuses-v1::' + BASE;
 
-// Password config (elige uno):
-const EDIT_HASH  = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
-const EDIT_PLAIN = import.meta.env.VITE_EDIT_PLAIN || null; // texto plano
+// ==== PASSWORD / EDIT LOCK ===================================================
+const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
+const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
 const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 
-// ---- State ----
+// ==== PERSISTENCIA CENTRAL (GOOGLE APPS SCRIPT) ==============================
+// Modo: si GAS_TOKEN está vacío => dominio corporativo (cookies) ; si no, público+token
+const PROJECT_ID   = 'pnl-lineage'; // cambia si quieres separar proyectos
+const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyPDpHhbECeC12X6wFKX0jxzf1pvw5fCFIcPpFJ5eq5XElYIyhUqeJpIAn5Hw7tZ0dD/exec'; // p.ej: 'https://script.google.com/macros/s/XXXX/exec'
+const GAS_TOKEN    = ''; // '' si usas "Anyone within dominio"; o token si usas "Anyone" público
+const IS_DOMAIN_MODE = !GAS_TOKEN;
+
+// ==== STATE =================================================================
 let graph = { nodes: [], edges: [] };
 let statuses = loadStatuses();
 let panzoom;
-let celebrated = false;   // si ya celebramos el 100%
-let canEdit = false;      // 🔒 bloqueado por defecto
+let celebrated = false;  // para el 100%
+let canEdit = false;     // 🔒 bloqueado por defecto
 
-// ---- DOM ----
+// ==== DOM ===================================================================
 const svg       = document.getElementById('svg');
 const gEdges    = document.getElementById('edges');
 const gNodes    = document.getElementById('nodes');
@@ -59,53 +72,63 @@ const lockOk    = document.getElementById('lock-confirm');
 
 // Confetti canvas
 const fxCanvas = document.getElementById('fx');
-const fxCtx = fxCanvas.getContext('2d');
+const fxCtx    = fxCanvas.getContext('2d');
 
-// ---- Utils ----
+// ==== UTILS =================================================================
 const norm = v => (v == null ? '' : String(v)).trim();
-function loadStatuses(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }catch{ return {}; } }
-function saveStatuses(obj){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(obj)); }catch{} }
-function setStatus(msg, ok=true){ statusBox.textContent = msg; statusBox.className = 'status ' + (ok ? 'ok' : 'err'); }
 
-// text measure (for node size)
+function loadStatuses(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveStatuses(obj){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(obj)); }
+  catch {}
+}
+function setStatus(msg, ok=true){
+  statusBox.textContent = msg;
+  statusBox.className = 'status ' + (ok ? 'ok' : 'err');
+}
+
+// Medida de texto para tamaño de nodos
 const measureCanvas = document.createElement('canvas');
 const ctx = measureCanvas.getContext('2d');
 ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
 function measureTextSize(text){
   const m = ctx.measureText(text);
   const w = Math.max(8, Math.ceil(m.width));
-  const h = 16; // quick approx
+  const h = 16; // aprox
   const padX = 12, padY = 8;
   return { width: w + padX*2, height: h + padY*2 };
 }
 
-// SHA-256 helper
+// SHA-256 helper (para EDIT_HASH)
 async function sha256Hex(s){
   const enc = new TextEncoder().encode(s);
   const buf = await crypto.subtle.digest('SHA-256', enc);
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// ---- Progreso (solo DONE) + efectos visuales ----
+// ==== PROGRESO ==============================================================
 function updateProgress(){
   const total = graph.nodes.length || 0;
-  const done = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'done' ? 1 : 0), 0);
-  const pct = total ? Math.round(done*100/total) : 0;
-  progFill.style.width = pct+'%';
+  const done  = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'done' ? 1 : 0), 0);
+  const pct   = total ? Math.round(done*100/total) : 0;
+  progFill.style.width = pct + '%';
   progFill.style.background = (pct === 100 ? GLOVO_GREEN : GLOVO_YELLOW);
   progLabel.textContent = `Done ${pct}%`;
 
   if (pct === 100 && !celebrated){
     celebrated = true;
     progFill.classList.add('is-complete');
-    celebrateBig(); // 🎉 fiesta grande al 100%
+    celebrateBig();
   } else if (pct < 100){
     celebrated = false;
     progFill.classList.remove('is-complete');
   }
 }
 
-// ---- CSV helpers ----
+// ==== CSV -> GRAPH ==========================================================
 function pickHeader(headers, wanted){
   const lc = wanted.toLowerCase();
   return headers.find(h => (h||'').toLowerCase() === lc) || null;
@@ -131,7 +154,7 @@ function fromCsv(rows){
   return { nodes, edges };
 }
 
-// ---- Layout & render with ELK ----
+// ==== LAYOUT & RENDER (ELK + SVG) ===========================================
 async function layoutAndRender(){
   try{
     const elk = new ELK();
@@ -153,12 +176,12 @@ async function layoutAndRender(){
 
     const res = await elk.layout(elkGraph);
 
-    // clear
+    // limpiar
     gEdges.innerHTML = '';
     gNodes.innerHTML = '';
 
-    // Draw edges
-    const edgePathById = new Map(); // id -> SVGPath
+    // Edges
+    const edgePathById = new Map();
     for (const e of res.edges){
       const sec = e.sections?.[0]; if (!sec) continue;
       const pts = [
@@ -179,10 +202,10 @@ async function layoutAndRender(){
       edgePathById.set(e.id, path);
     }
 
-    // Draw nodes
+    // Nodes
     for (const n of res.children){
-      const status = (statuses[n.id] || 'pending');
-      const color  = STATUS_COLOR[status] || STATUS_COLOR.pending;
+      const st = (statuses[n.id] || 'pending');
+      const color = STATUS_COLOR[st] || STATUS_COLOR.pending;
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('transform', `translate(${n.x},${n.y})`);
@@ -214,17 +237,17 @@ async function layoutAndRender(){
       g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
       g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
 
-      // click -> si está bloqueado, no cambia
+      // click -> ciclo de estado
       g.addEventListener('click', () => {
         if (!canEdit){ setStatus('Read-only. Click "Unlock" to enable editing.', false); return; }
-        const order = STATUS_ORDER;
         const prev = (statuses[n.id] || 'pending');
-        const nxt  = order[(order.indexOf(prev)+1) % order.length];
-
+        const nxt  = STATUS_ORDER[(STATUS_ORDER.indexOf(prev)+1) % STATUS_ORDER.length];
         statuses[n.id] = nxt;
+
+        // nodo
         rect.setAttribute('fill', STATUS_COLOR[nxt] || STATUS_COLOR.pending);
 
-        // recolor edges whose source is this node
+        // edges desde este nodo
         for (const e of graph.edges){
           if (e.source === n.id){
             const p = edgePathById.get(e.id);
@@ -235,16 +258,17 @@ async function layoutAndRender(){
           }
         }
 
-        // 🎊 Confeti pequeño cada vez que un nodo pasa a 'done'
+        // confeti pequeño cuando pasa a done
         if (prev !== 'done' && nxt === 'done') celebrateSmall();
 
         saveStatuses(statuses);
+        pushDebounced();   // 🔄 guarda en GAS (debounced)
         updateProgress();
       });
     }
 
-    // pan/zoom
-    if (panzoom){ panzoom.destroy(); }
+    // Pan/Zoom
+    if (panzoom) panzoom.destroy();
     panzoom = svgPanZoom(svg, {
       zoomEnabled: true,
       controlIconsEnabled: false,
@@ -264,7 +288,7 @@ async function layoutAndRender(){
   }
 }
 
-// ---- Controls ----
+// ==== CONTROLES ==============================================================
 btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
 btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
 btnFit.onclick     = () => panzoom && (panzoom.fit(), panzoom.center());
@@ -273,6 +297,7 @@ btnReset.onclick = () => {
   if (!canEdit){ setStatus('Read-only. Unlock to reset.', false); return; }
   statuses = {};
   saveStatuses(statuses);
+  // recolor en caliente
   for (const p of gNodes.querySelectorAll('rect')) p.setAttribute('fill', STATUS_COLOR.pending);
   for (const p of gEdges.querySelectorAll('path')) {
     p.setAttribute('stroke', STATUS_COLOR.pending);
@@ -281,6 +306,7 @@ btnReset.onclick = () => {
   celebrated = false;
   progFill.classList.remove('is-complete');
   updateProgress();
+  pushDebounced(); // 🔄 subir reset
 };
 
 btnExport.onclick = () => {
@@ -303,6 +329,7 @@ impInput.onchange = async () => {
     saveStatuses(statuses);
     await layoutAndRender();
     setStatus('Statuses imported', true);
+    pushDebounced(); // 🔄 subir import
   }catch(err){
     setStatus('Invalid JSON: ' + err.message, false);
   }finally{
@@ -320,12 +347,12 @@ fileInput.onchange = async () => {
       graph = fromCsv(res.data);
       await layoutAndRender();
     },
-    error: (err) => setStatus('CSV error: '+err.message, false)
+    error: (err) => setStatus('CSV error: ' + err.message, false)
   });
   fileInput.value = '';
 };
 
-// Auto-load de /public/lineage.csv si existe (GH Pages usa BASE_URL)
+// ==== BOOT (autoload CSV + pull cloud) ======================================
 (async function boot(){
   try{
     const r = await fetch(`${BASE}lineage.csv?ts=${Date.now()}`, { cache: 'no-store' });
@@ -333,7 +360,12 @@ fileInput.onchange = async () => {
       const text = await r.text();
       const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
       graph = fromCsv(parsed.data);
+
+      // intenta cargar estado centralizado
+      const loadedCloud = await pullStatusesFromCloud();
+
       await layoutAndRender();
+      if (loadedCloud) setStatus('Loaded cloud statuses', true);
     } else {
       setStatus('Ready. Upload a CSV to render.', true);
     }
@@ -343,12 +375,12 @@ fileInput.onchange = async () => {
   updateEditUI();
 })();
 
-// ---- Edit lock / unlock ----
+// ==== EDIT LOCK / UNLOCK =====================================================
 function updateEditUI(){
   lockState.textContent = canEdit ? 'Edit mode' : 'Read-only';
   lockBtn.textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
 
-  // deshabilitar acciones que cambian estado/datos
+  // acciones que cambian estado
   btnExport.disabled = !canEdit;
   btnReset.disabled  = !canEdit;
 
@@ -362,7 +394,7 @@ function updateEditUI(){
 }
 
 lockBtn.onclick = () => {
-  if (canEdit){ // bloquear de nuevo
+  if (canEdit){
     canEdit = false;
     updateEditUI();
     setStatus('Locked. Read-only.', true);
@@ -375,7 +407,6 @@ lockBtn.onclick = () => {
   passIn.value = '';
   passIn.focus();
 };
-
 lockCancel.onclick = closeModal;
 function closeModal(){
   modal.classList.add('hidden');
@@ -401,12 +432,13 @@ lockOk.onclick = async () => {
     updateEditUI();
     setStatus('Unlocked. Edit mode enabled.', true);
     closeModal();
-  }catch(err){
+  }catch(_){
     lockMsg.textContent = 'Incorrect password.';
   }
 };
 
-// ---- Confetti utils ----
+// ==== CONFETTI ==============================================================
+// Resize canvas to container
 function sizeFxToCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const rect = fxCanvas.getBoundingClientRect();
@@ -420,7 +452,7 @@ function confetti({duration=1200, count=120} = {}){
   sizeFxToCanvas();
   const W = fxCanvas.clientWidth, H = fxCanvas.clientHeight;
   const colors = [GLOVO_YELLOW, GLOVO_GREEN, '#ef4444', '#60a5fa'];
-  const N = Math.min(count, Math.floor((W*H)/12000)); // escala con tamaño
+  const N = Math.min(count, Math.floor((W*H)/12000));
 
   const parts = Array.from({length:N}).map(()=>({
     x: Math.random()*W,
@@ -451,8 +483,50 @@ function confetti({duration=1200, count=120} = {}){
   })(performance.now());
 }
 
-// 🎉 Pequeño: cada nodo que pasa a done
-function celebrateSmall(){ confetti({ duration: 900, count: 90 }); }
+function celebrateSmall(){ confetti({ duration: 900,  count: 90  }); }
+function celebrateBig(){   confetti({ duration: 1800, count: 220 }); }
 
-// 🎉🎉 Grande: cuando llegas al 100%
-function celebrateBig(){ confetti({ duration: 1800, count: 220 }); }
+// ==== DEBOUNCE & CLOUD SYNC =================================================
+function debounce(fn, ms = 600){
+  let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+}
+
+// parse seguro para GET
+async function readJSON(resp){
+  const txt = await resp.text();
+  try { return JSON.parse(txt); } catch { return null; }
+}
+
+// Pull desde GAS
+async function pullStatusesFromCloud(){
+  try{
+    const url = `${GAS_ENDPOINT}?project=${encodeURIComponent(PROJECT_ID)}&ts=${Date.now()}`;
+    const fetchOpts = IS_DOMAIN_MODE
+      ? { method: 'GET', credentials: 'include' } // dominio: envía cookies si están permitidas
+      : { method: 'GET' };                        // público
+    const r = await fetch(url, fetchOpts);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await readJSON(r);
+    if(data && data.ok && data.statuses && typeof data.statuses === 'object'){
+      statuses = data.statuses;
+      saveStatuses(statuses);
+      return true;
+    }
+  }catch(_){}
+  return false;
+}
+
+// Push a GAS
+async function pushStatusesToCloud(){
+  try{
+    const body = { project: PROJECT_ID, token: GAS_TOKEN, statuses };
+    const fetchOpts = {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body),
+      ...(IS_DOMAIN_MODE ? { credentials: 'include' } : {})
+    };
+    await fetch(GAS_ENDPOINT, fetchOpts);
+  }catch(_){}
+}
+const pushDebounced = debounce(pushStatusesToCloud, 800);

@@ -33,7 +33,7 @@ const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
 // Modo: si GAS_TOKEN está vacío => dominio corporativo (cookies) ; si no, público+token
 const PROJECT_ID   = 'pnl-lineage'; // cambia si quieres separar proyectos
 const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwG_pGw4tgQgmr-zMIaZyMcYwUv9aBh_vdKHeIa4aU5HbCYk_HtZmQ11DAAQlv2Egghkw/exec'; // p.ej: 'https://script.google.com/macros/s/XXXX/exec'
-const GAS_TOKEN    = ''; // '' si usas "Anyone within dominio"; o token si usas "Anyone" público
+const GAS_TOKEN    = '73y3g3vgu3dhiu23289279uriuhi2uk4b3ru2bu436fg623233'; // '' si usas "Anyone within dominio"; o token si usas "Anyone" público
 const IS_DOMAIN_MODE = !GAS_TOKEN;
 
 // ==== STATE =================================================================

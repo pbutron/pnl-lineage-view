@@ -9,12 +9,11 @@
     "preview": "vite preview --port 5173 --strictPort"
   },
   "dependencies": {
-    "elkjs": "^0.9.0",
-    "papaparse": "^5.4.1",
-    "svg-pan-zoom": "^3.6.1"
+    "elkjs": "^0.10.0",
+    "papaparse": "^5.5.3",
+    "svg-pan-zoom": "^3.6.2"
   },
   "devDependencies": {
-    "vite": "^5.4.0"
+    "vite": "^7.1.3"
   }
 }
-

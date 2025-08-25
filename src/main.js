@@ -2,40 +2,59 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import Papa from 'papaparse';
 import svgPanZoom from 'svg-pan-zoom';
 
-// ==== BRAND & STATUS =========================================================
-const GLOVO_YELLOW = '#FFC244';
-const GLOVO_GREEN  = '#00A082';
+// ==== COLORS & STATUS ========================================================
+const GREEN        = '#00A082'; // Ready (SoT)
+const ORANGE       = '#f59e0b'; // Implemented & Reconciled
+const YELLOW       = '#FFC244'; // implemented
+const RED          = '#ef4444'; // Pending
+const RED_STRONG   = '#b91c1c'; // blocked
 
-const STATUS_ORDER = ['pending','wip','blocked','done'];
-const STATUS_COLOR = {
-  pending:'#9ca3af',
-  wip:    GLOVO_YELLOW,
-  blocked:'#ef4444',
-  done:   GLOVO_GREEN
+// Keys internos (sin espacios) + etiquetas visibles
+const STATUS_KEYS  = ['pending','implemented','implemented_reconciled','ready','blocked'];
+const STATUS_LABEL = {
+  pending: 'Pending',
+  implemented: 'implemented',
+  implemented_reconciled: 'Implemented & Reconciled',
+  ready: 'Ready (SoT)',
+  blocked: 'blocked'
 };
+// Orden de ciclo
+const STATUS_ORDER = ['pending','implemented','implemented_reconciled','ready','blocked'];
+
+// Colores por estado
+const STATUS_COLOR = {
+  pending: RED,
+  implemented: YELLOW,
+  implemented_reconciled: ORANGE,
+  ready: GREEN,
+  blocked: RED_STRONG
+};
+
+// Marcadores de flecha
 const EDGE_MARKER  = {
   pending: 'url(#arrow-pending)',
-  wip:     'url(#arrow-wip)',
-  blocked: 'url(#arrow-blocked)',
-  done:    'url(#arrow-done)'
+  implemented: 'url(#arrow-implemented)',
+  implemented_reconciled: 'url(#arrow-implemented_reconciled)',
+  ready: 'url(#arrow-ready)',
+  blocked: 'url(#arrow-blocked)'
 };
 
 // ==== BASE URL (GH Pages) & STORAGE KEY =====================================
 const BASE = import.meta.env.BASE_URL || '/';
-const STORE_KEY = 'lineage-statuses-v1::' + BASE;
-const DEFAULTS_URL = `${BASE}lineage-statuses.json`; // <<-- aquí leemos los defaults
+const STORE_KEY = 'lineage-statuses-v3::' + BASE; // v3 para separar de versiones previas
+const DEFAULTS_URL = `${BASE}lineage-statuses.json`; // mapa id -> estado (usar keys arriba)
 
 // ==== PASSWORD / EDIT LOCK ===================================================
 const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
 const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
-const DEFAULT_PLAIN = 'pbutron'; // fallback si no configuras nada
+const DEFAULT_PLAIN = 'pbutron';
 
 // ==== STATE =================================================================
 let graph = { nodes: [], edges: [] };
-let statuses = {};         // se carga en boot
+let statuses = {};
 let panzoom;
-let celebrated = false;    // para el 100%
-let canEdit = false;       // 🔒 bloqueado por defecto
+let celebrated = false;
+let canEdit = false;
 
 // ==== DOM ===================================================================
 const svg       = document.getElementById('svg');
@@ -49,7 +68,7 @@ const impLabel  = document.getElementById('imp-label');
 const btnZoomIn  = document.getElementById('zoom-in');
 const btnZoomOut = document.getElementById('zoom-out');
 const btnFit     = document.getElementById('fit');
-const btnReset   = document.getElementById('reset');     // ahora: Reset a defaults
+const btnReset   = document.getElementById('reset');
 const btnExport  = document.getElementById('btn-export');
 
 const progFill  = document.getElementById('prog-fill');
@@ -84,14 +103,41 @@ function setStatus(msg, ok=true){
   statusBox.className = 'status ' + (ok ? 'ok' : 'err');
 }
 
-// leer defaults desde /public/lineage-statuses.json
+// Migración desde estados antiguos a los nuevos
+function migrateOldStatuses(obj){
+  if (!obj || typeof obj !== 'object') return {};
+  const out = {};
+  for (const [k,vRaw] of Object.entries(obj)){
+    const v = norm(vRaw).toLowerCase();
+    let mapped;
+    switch (v) {
+      case 'pending':         mapped = 'pending'; break;
+      case 'todo':            mapped = 'pending'; break;
+      case 'wip':             mapped = 'implemented'; break;
+      case 'implemented':     mapped = 'implemented'; break;
+      case 'reconciled':      mapped = 'implemented_reconciled'; break;
+      case 'implemented & reconciled':
+      case 'implemented_reconciled':
+                             mapped = 'implemented_reconciled'; break;
+      case 'done':            mapped = 'ready'; break;
+      case 'confident':       mapped = 'ready'; break;
+      case 'ready':
+      case 'ready (sot)':     mapped = 'ready'; break;
+      case 'blocked':         mapped = 'blocked'; break;
+      default:                mapped = 'pending';
+    }
+    out[k] = mapped;
+  }
+  return out;
+}
+
+// Defaults desde /public/lineage-statuses.json (usar keys nuevas)
 async function loadDefaultStatuses(){
   try{
     const r = await fetch(DEFAULTS_URL, { cache:'no-store' });
     if (!r.ok) return {};
-    const txt = await r.text();
-    const obj = JSON.parse(txt);
-    return (obj && typeof obj === 'object') ? obj : {};
+    const obj = JSON.parse(await r.text());
+    return migrateOldStatuses(obj);
   }catch(_){ return {}; }
 }
 
@@ -102,7 +148,7 @@ ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
 function measureTextSize(text){
   const m = ctx.measureText(text);
   const w = Math.max(8, Math.ceil(m.width));
-  const h = 16; // aprox
+  const h = 16;
   const padX = 12, padY = 8;
   return { width: w + padX*2, height: h + padY*2 };
 }
@@ -114,14 +160,14 @@ async function sha256Hex(s){
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// ==== PROGRESO ==============================================================
+// ==== PROGRESO (solo Ready/verde) ===========================================
 function updateProgress(){
   const total = graph.nodes.length || 0;
-  const done  = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'done' ? 1 : 0), 0);
-  const pct   = total ? Math.round(done*100/total) : 0;
+  const ready = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'ready' ? 1 : 0), 0);
+  const pct   = total ? Math.round(ready*100/total) : 0;
   progFill.style.width = pct + '%';
-  progFill.style.background = (pct === 100 ? GLOVO_GREEN : GLOVO_YELLOW);
-  progLabel.textContent = `Done ${pct}%`;
+  progFill.style.background = (pct === 100 ? GREEN : YELLOW);
+  progLabel.textContent = `Ready (SoT) ${pct}%`;
 
   if (pct === 100 && !celebrated){
     celebrated = true;
@@ -199,7 +245,7 @@ async function layoutAndRender(){
       path.setAttribute('d', d);
       const srcId = e.sources[0];
       const s = statuses[srcId] || 'pending';
-      path.setAttribute('stroke', STATUS_COLOR[s] || STATUS_COLOR.pending);
+      path.setAttribute('stroke', STATUS_COLOR[s] || RED);
       path.setAttribute('stroke-width', '1.3');
       path.setAttribute('fill', 'none');
       path.setAttribute('marker-end', EDGE_MARKER[s] || EDGE_MARKER.pending);
@@ -210,7 +256,7 @@ async function layoutAndRender(){
     // Nodes
     for (const n of res.children){
       const st = (statuses[n.id] || 'pending');
-      const color = STATUS_COLOR[st] || STATUS_COLOR.pending;
+      const color = STATUS_COLOR[st] || RED;
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('transform', `translate(${n.x},${n.y})`);
@@ -250,21 +296,21 @@ async function layoutAndRender(){
         statuses[n.id] = nxt;
 
         // nodo
-        rect.setAttribute('fill', STATUS_COLOR[nxt] || STATUS_COLOR.pending);
+        rect.setAttribute('fill', STATUS_COLOR[nxt] || RED);
 
         // edges desde este nodo
         for (const e of graph.edges){
           if (e.source === n.id){
             const p = edgePathById.get(e.id);
             if (p){
-              p.setAttribute('stroke', STATUS_COLOR[nxt] || STATUS_COLOR.pending);
+              p.setAttribute('stroke', STATUS_COLOR[nxt] || RED);
               p.setAttribute('marker-end', EDGE_MARKER[nxt] || EDGE_MARKER.pending);
             }
           }
         }
 
-        // confeti pequeño cuando pasa a done
-        if (prev !== 'done' && nxt === 'done') celebrateSmall();
+        // confeti pequeño cuando pasa a Ready
+        if (prev !== 'ready' && nxt === 'ready') celebrateSmall();
 
         saveStatuses(statuses);
         updateProgress();
@@ -297,11 +343,10 @@ btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
 btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
 btnFit.onclick     = () => panzoom && (panzoom.fit(), panzoom.center());
 
-// RESET: ahora vuelve a los defaults (no a gris)
 btnReset.onclick = async () => {
   if (!canEdit){ setStatus('Read-only. Unlock to reset.', false); return; }
   const defs = await loadDefaultStatuses();
-  statuses = { ...(defs || {}) };   // reset a defaults
+  statuses = { ...(defs || {}) };
   saveStatuses(statuses);
   await layoutAndRender();
   setStatus('Statuses reset to defaults', true);
@@ -323,7 +368,7 @@ impInput.onchange = async () => {
   try{
     const txt = await f.text();
     const obj = JSON.parse(txt);
-    statuses = obj || {};
+    statuses = migrateOldStatuses(obj) || {};
     saveStatuses(statuses);
     await layoutAndRender();
     setStatus('Statuses imported', true);
@@ -359,11 +404,11 @@ fileInput.onchange = async () => {
     const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
     graph = fromCsv(parsed.data);
 
-    // 2) defaults + local
+    // 2) defaults + local + migración
     const defs = await loadDefaultStatuses();
-    const saved = loadStatuses();
+    const saved = migrateOldStatuses(loadStatuses());
     statuses = Object.keys(saved).length ? saved : (defs || {});
-    saveStatuses(statuses); // asegura persistencia tras primer boot
+    saveStatuses(statuses);
 
     await layoutAndRender();
     setStatus('Ready', true);
@@ -377,38 +422,22 @@ fileInput.onchange = async () => {
 function updateEditUI(){
   lockState.textContent = canEdit ? 'Edit mode' : 'Read-only';
   lockBtn.textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
-
   btnExport.disabled = !canEdit;
   btnReset.disabled  = !canEdit;
-
-  if (canEdit){
-    fileLabel.classList.remove('disabled');
-    impLabel.classList.remove('disabled');
-  } else {
-    fileLabel.classList.add('disabled');
-    impLabel.classList.add('disabled');
-  }
+  if (canEdit){ fileLabel.classList.remove('disabled'); impLabel.classList.remove('disabled'); }
+  else { fileLabel.classList.add('disabled'); impLabel.classList.add('disabled'); }
 }
 
 lockBtn.onclick = () => {
   if (canEdit){
-    canEdit = false;
-    updateEditUI();
-    setStatus('Locked. Read-only.', true);
-    return;
+    canEdit = false; updateEditUI(); setStatus('Locked. Read-only.', true); return;
   }
-  modal.classList.remove('hidden');
-  modal.setAttribute('aria-hidden','false');
-  lockMsg.textContent = '';
-  passIn.value = '';
-  passIn.focus();
+  modal.classList.remove('hidden'); modal.setAttribute('aria-hidden','false');
+  lockMsg.textContent = ''; passIn.value = ''; passIn.focus();
 };
 lockCancel.onclick = closeModal;
 function closeModal(){
-  modal.classList.add('hidden');
-  modal.setAttribute('aria-hidden','true');
-  lockMsg.textContent = '';
-  passIn.value = '';
+  modal.classList.add('hidden'); modal.setAttribute('aria-hidden','true'); lockMsg.textContent = ''; passIn.value = '';
 }
 passIn.addEventListener('keydown', (e)=>{ if(e.key==='Enter') lockOk.click(); });
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classList.contains('hidden')) closeModal(); });
@@ -416,25 +445,14 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classL
 lockOk.onclick = async () => {
   const pwd = passIn.value || '';
   try{
-    if (EDIT_HASH){
-      const hex = await sha256Hex(pwd);
-      if (hex !== EDIT_HASH) throw new Error('Wrong password');
-    } else if (EDIT_PLAIN){
-      if (pwd !== EDIT_PLAIN) throw new Error('Wrong password');
-    } else {
-      if (pwd !== DEFAULT_PLAIN) throw new Error('Wrong password');
-    }
-    canEdit = true;
-    updateEditUI();
-    setStatus('Unlocked. Edit mode enabled.', true);
-    closeModal();
-  }catch(_){
-    lockMsg.textContent = 'Incorrect password.';
-  }
+    if (EDIT_HASH){ const hex = await sha256Hex(pwd); if (hex !== EDIT_HASH) throw new Error('Wrong password'); }
+    else if (EDIT_PLAIN){ if (pwd !== EDIT_PLAIN) throw new Error('Wrong password'); }
+    else { if (pwd !== DEFAULT_PLAIN) throw new Error('Wrong password'); }
+    canEdit = true; updateEditUI(); setStatus('Unlocked. Edit mode enabled.', true); closeModal();
+  }catch(_){ lockMsg.textContent = 'Incorrect password.'; }
 };
 
-// ==== CONFETTI ==============================================================
-// Resize canvas to container
+// ==== CONFETTI (single RAF, no piling up) ===================================
 function sizeFxToCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const rect = fxCanvas.getBoundingClientRect();
@@ -444,40 +462,41 @@ function sizeFxToCanvas(){
 }
 window.addEventListener('resize', sizeFxToCanvas, { passive:true });
 
-function confetti({duration=1200, count=120} = {}){
+let fxRAF = null;
+function confetti({duration=1000, count=100} = {}){
   sizeFxToCanvas();
   const W = fxCanvas.clientWidth, H = fxCanvas.clientHeight;
-  const colors = [GLOVO_YELLOW, GLOVO_GREEN, '#ef4444', '#60a5fa'];
-  const N = Math.min(count, Math.floor((W*H)/12000));
-
+  const colors = [YELLOW, GREEN, ORANGE, '#60a5fa', RED];
+  const N = Math.min(count, Math.floor((W*H)/15000));
   const parts = Array.from({length:N}).map(()=>({
     x: Math.random()*W,
-    y: -10 - Math.random()*H*0.2,
-    vx: (Math.random()-0.5)*1.5,
-    vy: 1.8 + Math.random()*2.8,
+    y: -10 - Math.random()*H*0.15,
+    vx: (Math.random()-0.5)*1.2,
+    vy: 1.6 + Math.random()*2.3,
     size: 3 + Math.random()*4,
     rot: Math.random()*Math.PI,
-    vr: (Math.random()-0.5)*0.22,
+    vr: (Math.random()-0.5)*0.2,
     color: colors[(Math.random()*colors.length)|0],
   }));
 
   const start = performance.now();
-  (function tick(now){
-    const t = now - start;
+  const endAt = start + duration;
+
+  if (fxRAF) cancelAnimationFrame(fxRAF);
+
+  function tick(now){
     fxCtx.clearRect(0,0,W,H);
     for (const p of parts){
       p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-      fxCtx.save();
-      fxCtx.translate(p.x, p.y);
-      fxCtx.rotate(p.rot);
-      fxCtx.fillStyle = p.color;
-      fxCtx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+      fxCtx.save(); fxCtx.translate(p.x, p.y); fxCtx.rotate(p.rot);
+      fxCtx.fillStyle = p.color; fxCtx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
       fxCtx.restore();
     }
-    if (t < duration){ requestAnimationFrame(tick); }
-    else fxCtx.clearRect(0,0,W,H);
-  })(performance.now());
+    if (now < endAt) fxRAF = requestAnimationFrame(tick);
+    else { fxCtx.clearRect(0,0,W,H); fxRAF = null; }
+  }
+  fxRAF = requestAnimationFrame(tick);
 }
 
-function celebrateSmall(){ confetti({ duration: 900,  count: 90  }); }
-function celebrateBig(){   confetti({ duration: 1800, count: 220 }); }
+function celebrateSmall(){ confetti({ duration: 800,  count: 70  }); }
+function celebrateBig(){   confetti({ duration: 1600, count: 180 }); }

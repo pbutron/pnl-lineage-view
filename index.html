@@ -7,17 +7,16 @@
     <style>
         :root{
           --glovo-yellow:#FFC244; --glovo-green:#00A082;
+          --orange:#f59e0b; --red:#ef4444; --red-strong:#b91c1c;
           --ink:#111827; --muted:#6b7280; --border:#e5e7eb; --panel:#ffffff; --bg:#f8fafc;
-          --btn:#fff; --btn-border:#ddd; --shadow:0 1px 2px rgba(0,0,0,.06);
-          --radius:12px;
+          --btn:#fff; --btn-border:#ddd; --shadow:0 1px 2px rgba(0,0,0,.06); --radius:12px;
         }
-        html,body{
-          height:100%; margin:0; color:var(--ink); font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+        html,body{height:100%; margin:0; color:var(--ink);
+          font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial;
           background: radial-gradient(circle at 1px 1px, rgba(255,194,68,.11) 1px, transparent 1px) 0 0/22px 22px, #f8fafc;
         }
         .shell{max-width:1200px;margin:0 auto;padding:16px}
         .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
-
         header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:12px 14px;border-radius:var(--radius);
           background:linear-gradient(180deg,#fff, #fafafa)}
         .head-left{display:flex;align-items:center;gap:12px}
@@ -26,14 +25,12 @@
         .title{display:flex;flex-direction:column}
         .title h1{font-size:16px;margin:0}
         .title small{color:var(--muted)}
-        .legend{display:flex;gap:8px;align-items:center;color:var(--muted)}
+        .legend{display:flex;gap:8px;align-items:center;color:var(--muted);flex-wrap:wrap}
         .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:#fff}
         .dot-sm{width:10px;height:10px;border-radius:50%}
         .head-actions{display:flex;gap:8px;align-items:center}
-
         .lock-btn{padding:8px 10px;border-radius:8px;border:1px solid var(--btn-border);background:var(--btn);cursor:pointer;box-shadow:var(--shadow)}
         .lock-state{color:var(--muted); font-size:12px}
-
         .progress{margin:8px 0 12px;border:1px solid var(--border);border-radius:9999px;background:#f3f4f6;overflow:hidden;height:16px;position:relative}
         .progress .fill{height:100%;width:0%;background:var(--glovo-yellow);transition:width .25s ease, background-color .25s ease}
         .progress .fill.is-complete{animation:pulse 1.2s ease-out 1}
@@ -43,7 +40,6 @@
           70%{ box-shadow: 0 0 0 18px rgba(0,160,130,0); }
           100%{ box-shadow: 0 0 0 0 rgba(0,160,130,0); }
         }
-
         .canvas{position:relative;height:74vh}
         .canvas .inner{position:absolute;inset:0;display:flex}
         .canvas svg{width:100%;height:100%;background:#fff;border-radius:var(--radius);border:1px solid var(--border)}
@@ -52,13 +48,11 @@
           background: var(--glovo-yellow);
           -webkit-mask: url("/glovo.svg") center/320px no-repeat;
                   mask: url("/glovo.svg") center/320px no-repeat;
-          opacity:.12; /* ajusta aquí la visibilidad del watermark */
+          opacity:.12;
         }
         .fx{ position:absolute; inset:0; pointer-events:none; border-radius:var(--radius); }
-
         .status{margin-top:8px;color:var(--muted);font-size:12px}
         .status.ok{color:#059669} .status.err{color:#dc2626}
-
         footer.footer{margin-top:12px;padding:10px 12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
         .actions{display:flex;gap:8px;flex-wrap:wrap}
         button{padding:8px 10px;border-radius:8px;border:1px solid var(--btn-border);background:var(--btn);cursor:pointer;box-shadow:var(--shadow)}
@@ -68,10 +62,8 @@
         .drop{padding:8px 12px;border:1px dashed var(--btn-border);border-radius:10px;color:var(--muted);background:#fff}
         .drop strong{color:var(--ink)}
         .drop.disabled{opacity:.5;pointer-events:none}
-
         .sig { margin-top: 8px; text-align: center; color: var(--muted); font-size: 12px; padding: 6px 0; }
         .sig strong { color: var(--ink); }
-
         /* Modal password */
         .modal{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:50}
         .hidden{display:none}
@@ -96,10 +88,11 @@
                 </div>
             </div>
             <div class="legend">
-                <span class="chip"><span class="dot-sm" style="background:#9ca3af"></span>pending</span>
-                <span class="chip"><span class="dot-sm" style="background:#FFC244"></span>wip</span>
-                <span class="chip"><span class="dot-sm" style="background:#ef4444"></span>blocked</span>
-                <span class="chip"><span class="dot-sm" style="background:#00A082"></span>done</span>
+                <span class="chip"><span class="dot-sm" style="background:#00A082"></span>Ready (SoT)</span>
+                <span class="chip"><span class="dot-sm" style="background:#f59e0b"></span>Implemented &amp; Reconciled</span>
+                <span class="chip"><span class="dot-sm" style="background:#FFC244"></span>implemented</span>
+                <span class="chip"><span class="dot-sm" style="background:#ef4444"></span>Pending</span>
+                <span class="chip"><span class="dot-sm" style="background:#b91c1c"></span>blocked</span>
             </div>
         </div>
         <div class="head-actions">
@@ -110,7 +103,7 @@
 
     <div class="card progress" id="progress">
         <div class="fill" id="prog-fill"></div>
-        <div class="label" id="prog-label">Done 0%</div>
+        <div class="label" id="prog-label">Ready (SoT) 0%</div>
     </div>
 
     <div class="card canvas">
@@ -120,17 +113,22 @@
                     <filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="140%">
                         <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.15"/>
                     </filter>
+
+                    <!-- Arrowheads for each status -->
                     <marker id="arrow-pending" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                        <path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"></path>
-                    </marker>
-                    <marker id="arrow-wip" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-                        <path d="M0,0 L10,5 L0,10 z" fill="#FFC244"></path>
-                    </marker>
-                    <marker id="arrow-blocked" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
                         <path d="M0,0 L10,5 L0,10 z" fill="#ef4444"></path>
                     </marker>
-                    <marker id="arrow-done" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                    <marker id="arrow-implemented" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#FFC244"></path>
+                    </marker>
+                    <marker id="arrow-implemented_reconciled" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"></path>
+                    </marker>
+                    <marker id="arrow-ready" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
                         <path d="M0,0 L10,5 L0,10 z" fill="#00A082"></path>
+                    </marker>
+                    <marker id="arrow-blocked" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L10,5 L0,10 z" fill="#b91c1c"></path>
                     </marker>
                 </defs>
                 <g id="edges"></g>
@@ -159,7 +157,7 @@
     </footer>
 
     <div class="sig">
-        Developed by <a href="https://github.com/pbutron" target="_blank" rel="noopener">pbutron :) </a> · 2025
+        Developed by <a href="https://github.com/pbutron" target="_blank" rel="noopener">pbutron :)</a> · 2025
     </div>
 </div>
 

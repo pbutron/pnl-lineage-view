@@ -3,31 +3,31 @@ import Papa from 'papaparse';
 import svgPanZoom from 'svg-pan-zoom';
 
 // ==== COLORS & STATUS ========================================================
-const GREEN        = '#00A082'; // Ready (SoT)
-const ORANGE       = '#f59e0b'; // Implemented & Reconciled
-const YELLOW       = '#FFC244'; // implemented
-const RED          = '#ef4444'; // Pending
-const RED_STRONG   = '#b91c1c'; // blocked
+const GREEN     = '#00A082';  // Ready (SoT)
+const ORANGE    = '#F97316';  // Implemented & Reconciled
+const YELLOW    = '#FFC244';  // Implemented
+const GRAY      = '#9CA3AF';  // Pending
+const RED_DARK  = '#7F1D1D';  // Blocked
 
-// Keys internos (sin espacios) + etiquetas visibles
-const STATUS_KEYS  = ['pending','implemented','implemented_reconciled','ready','blocked'];
+// Keys + etiquetas visibles (Capitalizadas)
+const STATUS_KEYS  = ['pending','implemented','implemented_reconciled','blocked','ready'];
 const STATUS_LABEL = {
   pending: 'Pending',
-  implemented: 'implemented',
+  implemented: 'Implemented',
   implemented_reconciled: 'Implemented & Reconciled',
-  ready: 'Ready (SoT)',
-  blocked: 'blocked'
+  blocked: 'Blocked',
+  ready: 'Ready (SoT)'
 };
 // Orden de ciclo
-const STATUS_ORDER = ['pending','implemented','implemented_reconciled','ready','blocked'];
+const STATUS_ORDER = ['pending','implemented','implemented_reconciled','blocked','ready'];
 
 // Colores por estado
 const STATUS_COLOR = {
-  pending: RED,
+  pending: GRAY,
   implemented: YELLOW,
   implemented_reconciled: ORANGE,
-  ready: GREEN,
-  blocked: RED_STRONG
+  blocked: RED_DARK,
+  ready: GREEN
 };
 
 // Marcadores de flecha
@@ -35,14 +35,14 @@ const EDGE_MARKER  = {
   pending: 'url(#arrow-pending)',
   implemented: 'url(#arrow-implemented)',
   implemented_reconciled: 'url(#arrow-implemented_reconciled)',
-  ready: 'url(#arrow-ready)',
-  blocked: 'url(#arrow-blocked)'
+  blocked: 'url(#arrow-blocked)',
+  ready: 'url(#arrow-ready)'
 };
 
 // ==== BASE URL (GH Pages) & STORAGE KEY =====================================
 const BASE = import.meta.env.BASE_URL || '/';
-const STORE_KEY = 'lineage-statuses-v3::' + BASE; // v3 para separar de versiones previas
-const DEFAULTS_URL = `${BASE}lineage-statuses.json`; // mapa id -> estado (usar keys arriba)
+const STORE_KEY = 'lineage-statuses-v3::' + BASE;
+const DEFAULTS_URL = `${BASE}lineage-statuses.json`;
 
 // ==== PASSWORD / EDIT LOCK ===================================================
 const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
@@ -55,6 +55,7 @@ let statuses = {};
 let panzoom;
 let celebrated = false;
 let canEdit = false;
+let resizeBound = false; // evita duplicar listeners de resize
 
 // ==== DOM ===================================================================
 const svg       = document.getElementById('svg');
@@ -111,34 +112,34 @@ function migrateOldStatuses(obj){
     const v = norm(vRaw).toLowerCase();
     let mapped;
     switch (v) {
-      case 'pending':         mapped = 'pending'; break;
-      case 'todo':            mapped = 'pending'; break;
-      case 'wip':             mapped = 'implemented'; break;
-      case 'implemented':     mapped = 'implemented'; break;
-      case 'reconciled':      mapped = 'implemented_reconciled'; break;
+      case 'pending':
+      case 'todo':              mapped = 'pending'; break;
+      case 'wip':
+      case 'implemented':       mapped = 'implemented'; break;
+      case 'reconciled':
       case 'implemented & reconciled':
       case 'implemented_reconciled':
-                             mapped = 'implemented_reconciled'; break;
-      case 'done':            mapped = 'ready'; break;
-      case 'confident':       mapped = 'ready'; break;
+                                 mapped = 'implemented_reconciled'; break;
+      case 'done':
+      case 'confident':
       case 'ready':
-      case 'ready (sot)':     mapped = 'ready'; break;
-      case 'blocked':         mapped = 'blocked'; break;
-      default:                mapped = 'pending';
+      case 'ready (sot)':       mapped = 'ready'; break;
+      case 'blocked':           mapped = 'blocked'; break;
+      default:                  mapped = 'pending';
     }
     out[k] = mapped;
   }
   return out;
 }
 
-// Defaults desde /public/lineage-statuses.json (usar keys nuevas)
+// Defaults desde /public/lineage-statuses.json
 async function loadDefaultStatuses(){
   try{
     const r = await fetch(DEFAULTS_URL, { cache:'no-store' });
     if (!r.ok) return {};
     const obj = JSON.parse(await r.text());
     return migrateOldStatuses(obj);
-  }catch(_){ return {}; }
+  }catch{ return {}; }
 }
 
 // Medida de texto para tamaño de nodos
@@ -167,7 +168,7 @@ function updateProgress(){
   const pct   = total ? Math.round(ready*100/total) : 0;
   progFill.style.width = pct + '%';
   progFill.style.background = (pct === 100 ? GREEN : YELLOW);
-  progLabel.textContent = `Ready (SoT) ${pct}%`;
+  progLabel.textContent = `P&L Progress ${pct}%`;
 
   if (pct === 100 && !celebrated){
     celebrated = true;
@@ -245,7 +246,7 @@ async function layoutAndRender(){
       path.setAttribute('d', d);
       const srcId = e.sources[0];
       const s = statuses[srcId] || 'pending';
-      path.setAttribute('stroke', STATUS_COLOR[s] || RED);
+      path.setAttribute('stroke', STATUS_COLOR[s] || GRAY);
       path.setAttribute('stroke-width', '1.3');
       path.setAttribute('fill', 'none');
       path.setAttribute('marker-end', EDGE_MARKER[s] || EDGE_MARKER.pending);
@@ -253,15 +254,17 @@ async function layoutAndRender(){
       edgePathById.set(e.id, path);
     }
 
-    // Nodes
+    // Nodes (con borde dorado + glow para finance_financial_metrics)
     for (const n of res.children){
       const st = (statuses[n.id] || 'pending');
-      const color = STATUS_COLOR[st] || RED;
+      const color = STATUS_COLOR[st] || GRAY;
+      const isMilestone = (n.id === 'finance_financial_metrics');
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('transform', `translate(${n.x},${n.y})`);
       g.style.cursor = 'pointer';
 
+      // rect base
       const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
       rect.setAttribute('rx','8'); rect.setAttribute('ry','8');
       rect.setAttribute('x','0'); rect.setAttribute('y','0');
@@ -272,23 +275,44 @@ async function layoutAndRender(){
       rect.setAttribute('stroke-width','1');
       rect.setAttribute('filter','url(#nodeShadow)');
 
+      // overlay dorado (más grueso + glow; no captura eventos)
+      let hl = null;
+      if (isMilestone){
+        hl = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        hl.setAttribute('x','-2'); hl.setAttribute('y','-2');
+        hl.setAttribute('width', String(n.width+4));
+        hl.setAttribute('height',String(n.height+4));
+        hl.setAttribute('rx','11'); hl.setAttribute('ry','11');
+        hl.setAttribute('fill','none');
+        hl.setAttribute('stroke','url(#goldStroke)');
+        hl.setAttribute('stroke-width','4.5');      // borde más presente
+        hl.setAttribute('filter','url(#goldGlow)');  // glow dorado
+        hl.setAttribute('pointer-events','none');
+      }
+
+      // texto (blanco solo si está Blocked)
       const text = document.createElementNS('http://www.w3.org/2000/svg','text');
       text.setAttribute('x', String(n.width/2));
       text.setAttribute('y', String(n.height/2));
       text.setAttribute('text-anchor','middle');
       text.setAttribute('dominant-baseline','middle');
       text.setAttribute('font-size','12');
-      text.setAttribute('fill','#111827');
+      text.setAttribute('fill', st === 'blocked' ? '#fff' : '#111827');
       text.textContent = n.id;
 
-      g.appendChild(rect); g.appendChild(text);
+      // apilar
+      g.appendChild(rect);
+      if (hl) g.appendChild(hl);
+      g.appendChild(text);
       gNodes.appendChild(g);
 
-      // hover
-      g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
-      g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
+      // hover (no tocar el borde dorado)
+      if (!isMilestone){
+        g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
+        g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
+      }
 
-      // click -> ciclo de estado
+      // click -> ciclo de estado + actualización edges
       g.addEventListener('click', () => {
         if (!canEdit){ setStatus('Read-only. Click "Unlock" to enable editing.', false); return; }
         const prev = (statuses[n.id] || 'pending');
@@ -296,20 +320,21 @@ async function layoutAndRender(){
         statuses[n.id] = nxt;
 
         // nodo
-        rect.setAttribute('fill', STATUS_COLOR[nxt] || RED);
+        rect.setAttribute('fill', STATUS_COLOR[nxt] || GRAY);
+        text.setAttribute('fill', nxt === 'blocked' ? '#fff' : '#111827');
 
-        // edges desde este nodo
+        // edges salientes
         for (const e of graph.edges){
           if (e.source === n.id){
             const p = edgePathById.get(e.id);
             if (p){
-              p.setAttribute('stroke', STATUS_COLOR[nxt] || RED);
+              p.setAttribute('stroke', STATUS_COLOR[nxt] || GRAY);
               p.setAttribute('marker-end', EDGE_MARKER[nxt] || EDGE_MARKER.pending);
             }
           }
         }
 
-        // confeti pequeño cuando pasa a Ready
+        // confeti cuando pasa a Ready
         if (prev !== 'ready' && nxt === 'ready') celebrateSmall();
 
         saveStatuses(statuses);
@@ -317,17 +342,49 @@ async function layoutAndRender(){
       });
     }
 
+    // Ajuste de viewBox al contenido + fit/center en el siguiente frame
+    const edgesBBox = gEdges.getBBox();
+    const nodesBBox = gNodes.getBBox();
+    const minX = Math.min(edgesBBox.x, nodesBBox.x);
+    const minY = Math.min(edgesBBox.y, nodesBBox.y);
+    const maxX = Math.max(edgesBBox.x + edgesBBox.width,  nodesBBox.x + nodesBBox.width);
+    const maxY = Math.max(edgesBBox.y + edgesBBox.height, nodesBBox.y + nodesBBox.height);
+    const pad  = 24;
+    svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${(maxX - minX) + pad*2} ${(maxY - minY) + pad*2}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
     // Pan/Zoom
     if (panzoom) panzoom.destroy();
     panzoom = svgPanZoom(svg, {
       zoomEnabled: true,
       controlIconsEnabled: false,
-      fit: true, center: true,
+      fit: true,
+      center: true,
       minZoom: 0.2, maxZoom: 10,
       dblClickZoomEnabled: false,
       preventMouseEventsDefault: true
     });
-    panzoom.fit(); panzoom.center();
+
+    // Esperar al siguiente frame para que BBox y viewBox estén listos
+    requestAnimationFrame(() => {
+      panzoom.updateBBox();
+      panzoom.resize();
+      panzoom.fit();
+      panzoom.center();
+    });
+
+    // reencajar al redimensionar (una sola vez)
+    if (!resizeBound){
+      window.addEventListener('resize', () => {
+        if (!panzoom) return;
+        panzoom.updateBBox();
+        panzoom.resize();
+        panzoom.fit();
+        panzoom.center();
+        sizeFxToCanvas();
+      }, { passive:true });
+      resizeBound = true;
+    }
 
     sizeFxToCanvas();
     setStatus(`Loaded ${graph.nodes.length} nodes · ${graph.edges.length} edges`, true);
@@ -341,7 +398,7 @@ async function layoutAndRender(){
 // ==== CONTROLES ==============================================================
 btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
 btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
-btnFit.onclick     = () => panzoom && (panzoom.fit(), panzoom.center());
+btnFit.onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
 
 btnReset.onclick = async () => {
   if (!canEdit){ setStatus('Read-only. Unlock to reset.', false); return; }
@@ -452,7 +509,7 @@ lockOk.onclick = async () => {
   }catch(_){ lockMsg.textContent = 'Incorrect password.'; }
 };
 
-// ==== CONFETTI (single RAF, no piling up) ===================================
+// ==== CONFETTI ===============================================================
 function sizeFxToCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const rect = fxCanvas.getBoundingClientRect();
@@ -466,7 +523,7 @@ let fxRAF = null;
 function confetti({duration=1000, count=100} = {}){
   sizeFxToCanvas();
   const W = fxCanvas.clientWidth, H = fxCanvas.clientHeight;
-  const colors = [YELLOW, GREEN, ORANGE, '#60a5fa', RED];
+  const colors = [YELLOW, GREEN, ORANGE, '#60a5fa', GRAY];
   const N = Math.min(count, Math.floor((W*H)/15000));
   const parts = Array.from({length:N}).map(()=>({
     x: Math.random()*W,
@@ -497,6 +554,5 @@ function confetti({duration=1000, count=100} = {}){
   }
   fxRAF = requestAnimationFrame(tick);
 }
-
 function celebrateSmall(){ confetti({ duration: 800,  count: 70  }); }
 function celebrateBig(){   confetti({ duration: 1600, count: 180 }); }

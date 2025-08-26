@@ -4,8 +4,8 @@ import svgPanZoom from 'svg-pan-zoom';
 
 // ==== COLORS & STATUS ========================================================
 const GREEN     = '#00A082';  // Ready (SoT)
-const ORANGE    = '#F97316';  // Implemented & Reconciled
-const YELLOW    = '#FFC244';  // Implemented
+const ORANGE    = '#F97316';  // Implemented
+const YELLOW    = '#FFC244';  // Implemented & Reconciled
 const GRAY      = '#9CA3AF';  // Pending
 const RED_DARK  = '#7F1D1D';  // Blocked
 
@@ -24,8 +24,8 @@ const STATUS_ORDER = ['pending','implemented','implemented_reconciled','blocked'
 // Colores por estado
 const STATUS_COLOR = {
   pending: GRAY,
-  implemented: YELLOW,
-  implemented_reconciled: ORANGE,
+  implemented: ORANGE,
+  implemented_reconciled: YELLOW,
   blocked: RED_DARK,
   ready: GREEN
 };
@@ -47,7 +47,7 @@ const DEFAULTS_URL = `${BASE}lineage-statuses.json`;
 // ==== PASSWORD / EDIT LOCK ===================================================
 const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
 const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
-const DEFAULT_PLAIN = 'pbutron';
+const DEFAULT_PLAIN = 'key';
 
 // ==== STATE =================================================================
 let graph = { nodes: [], edges: [] };
@@ -523,7 +523,7 @@ let fxRAF = null;
 function confetti({duration=1000, count=100} = {}){
   sizeFxToCanvas();
   const W = fxCanvas.clientWidth, H = fxCanvas.clientHeight;
-  const colors = [YELLOW, GREEN, ORANGE, '#60a5fa', GRAY];
+  const colors = [ORANGE, GREEN, YELLOW, '#60a5fa', GRAY];
   const N = Math.min(count, Math.floor((W*H)/15000));
   const parts = Array.from({length:N}).map(()=>({
     x: Math.random()*W,

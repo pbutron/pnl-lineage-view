@@ -53,7 +53,5 @@
   "tech__payments_recurrent_payments_update_v0": "ready",
   "tech__payments_debt_collector_updates_v0": "ready",
   "tech__orders_payments_payment_results_v0": "ready",
-  "mfc_purchase_orders": "ready",
-  "mfc_inventory": "ready",
   "contact_order_customer_compensations": "ready"
 }

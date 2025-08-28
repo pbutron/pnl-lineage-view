@@ -35,6 +35,7 @@
   "growth_pricing_discounts": "implemented",
   "growth_pricing_sources": "ready",
   "growth_prime": "implemented",
+  "growth_partner_promotion_commission_strategy": "pending",
   "herocare_contacts": "implemented",
   "logistics__gc_orders": "ready",
   "logistics__gc_rider_payments": "ready",

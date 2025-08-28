@@ -3,7 +3,7 @@ node_modules/
 dist/
 .DS_Store
 
-# Env (¡no subas contraseñas!)
+# Env
 .env
 .env.*
 !.env.example

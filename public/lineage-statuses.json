@@ -26,7 +26,7 @@
   "fintech_devices": "implemented",
   "fintech_order_partner_compensations": "implemented",
   "fintech_payments": "implemented_reconciled",
-  "fintech_payouts": "pending",
+  "fintech_payouts": "ready",
   "growth__discounted_service_fees": "implemented",
   "growth__gc_customer_incentives": "ready",
   "growth__prime_vendor_commission": "ready",

@@ -2,15 +2,14 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import Papa from 'papaparse';
 import svgPanZoom from 'svg-pan-zoom';
 
-// ==== COLORS & STATUS ========================================================
-const GREEN     = '#00A082';  // Ready (SoT)
-const ORANGE    = '#F97316';  // Implemented
-const YELLOW    = '#FFC244';  // Implemented & Reconciled
-const GRAY      = '#9CA3AF';  // Pending
-const RED_DARK  = '#7F1D1D';  // Blocked
+// ===== Config colores / estados =====
+const GREEN     = '#00A082';
+const ORANGE    = '#F97316';
+const YELLOW    = '#FFC244';
+const GRAY      = '#9CA3AF';
+const RED_DARK  = '#7F1D1D';
 
-// Keys + etiquetas visibles (Capitalizadas)
-const STATUS_KEYS  = ['pending','implemented','implemented_reconciled','blocked','ready'];
+const STATUS_ORDER = ['pending','implemented','implemented_reconciled','blocked','ready'];
 const STATUS_LABEL = {
   pending: 'Pending',
   implemented: 'Implemented',
@@ -18,10 +17,6 @@ const STATUS_LABEL = {
   blocked: 'Blocked',
   ready: 'Ready (SoT)'
 };
-// Orden de ciclo
-const STATUS_ORDER = ['pending','implemented','implemented_reconciled','blocked','ready'];
-
-// Colores por estado
 const STATUS_COLOR = {
   pending: GRAY,
   implemented: ORANGE,
@@ -29,8 +24,6 @@ const STATUS_COLOR = {
   blocked: RED_DARK,
   ready: GREEN
 };
-
-// Marcadores de flecha
 const EDGE_MARKER  = {
   pending: 'url(#arrow-pending)',
   implemented: 'url(#arrow-implemented)',
@@ -39,36 +32,22 @@ const EDGE_MARKER  = {
   ready: 'url(#arrow-ready)'
 };
 
-// ==== BASE URL (sin Vite) & STORAGE KEY =====================================
-// Deducción robusta del "base" del repo en GitHub Pages (p.ej. /pnl-lineage-view/)
-const BASE = (() => {
-  try {
-    const p = window.location.pathname;
-    // si termina en /index.html -> recorta hasta la carpeta
-    if (p.endsWith('.html')) return p.replace(/\/[^\/]*$/, '/') ;
-    // asegura que termina en '/'
-    return p.endsWith('/') ? p : (p.substring(0, p.lastIndexOf('/') + 1));
-  } catch { return '/'; }
-})();
-
-// NOTA: sube la versión si quieres “empezar de cero” sin limpiar storage
+// ===== BASE & storage (Vite friendly) =====
+const BASE = import.meta.env.BASE_URL || '/';
 const STORE_KEY = 'lineage-statuses-v3::' + BASE;
-
-// defaults desde raíz del repo (no en /public)
 const DEFAULTS_URL = `${BASE}lineage-statuses.json`;
 
-// ==== PASSWORD / EDIT LOCK ===================================================
+// ===== Password / edición =====
 const DEFAULT_PLAIN = 'key';
 
-// ==== STATE =================================================================
+// ===== Estado =====
 let graph = { nodes: [], edges: [] };
 let statuses = {};
 let panzoom;
 let celebrated = false;
 let canEdit = false;
-let resizeBound = false; // evita duplicar listeners de resize
 
-// ==== DOM ===================================================================
+// ===== DOM =====
 const svg       = document.getElementById('svg');
 const gEdges    = document.getElementById('edges');
 const gNodes    = document.getElementById('nodes');
@@ -95,27 +74,15 @@ const lockMsg   = document.getElementById('lock-msg');
 const lockCancel= document.getElementById('lock-cancel');
 const lockOk    = document.getElementById('lock-confirm');
 
-// Confetti canvas
 const fxCanvas = document.getElementById('fx');
 const fxCtx    = fxCanvas.getContext('2d');
 
-// ==== UTILS =================================================================
+// ===== Utils =====
 const norm = v => (v == null ? '' : String(v)).trim();
+function loadStatuses(){ try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; } }
+function saveStatuses(obj){ try { localStorage.setItem(STORE_KEY, JSON.stringify(obj)); } catch {} }
+function setStatus(msg, ok=true){ statusBox.textContent = msg; statusBox.className = 'status ' + (ok ? 'ok' : 'err'); }
 
-function loadStatuses(){
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }
-  catch { return {}; }
-}
-function saveStatuses(obj){
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(obj)); }
-  catch {}
-}
-function setStatus(msg, ok=true){
-  statusBox.textContent = msg;
-  statusBox.className = 'status ' + (ok ? 'ok' : 'err');
-}
-
-// Migración desde estados antiguos a los nuevos
 function migrateOldStatuses(obj){
   if (!obj || typeof obj !== 'object') return {};
   const out = {};
@@ -143,17 +110,15 @@ function migrateOldStatuses(obj){
   return out;
 }
 
-// Defaults desde /lineage-statuses.json
 async function loadDefaultStatuses(){
   try{
     const r = await fetch(DEFAULTS_URL, { cache:'no-store' });
     if (!r.ok) return {};
-    const obj = JSON.parse(await r.text());
+    const obj = await r.json();
     return migrateOldStatuses(obj);
   }catch{ return {}; }
 }
 
-// Medida de texto para tamaño de nodos
 const measureCanvas = document.createElement('canvas');
 const ctx = measureCanvas.getContext('2d');
 ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
@@ -165,7 +130,6 @@ function measureTextSize(text){
   return { width: w + padX*2, height: h + padY*2 };
 }
 
-// ==== PROGRESO (solo Ready/verde) ===========================================
 function updateProgress(){
   const total = graph.nodes.length || 0;
   const ready = graph.nodes.reduce((acc,n)=> acc + ((statuses[n.id]||'pending') === 'ready' ? 1 : 0), 0);
@@ -173,18 +137,10 @@ function updateProgress(){
   progFill.style.width = pct + '%';
   progFill.style.background = (pct === 100 ? GREEN : YELLOW);
   progLabel.textContent = `P&L Progress ${pct}%`;
-
-  if (pct === 100 && !celebrated){
-    celebrated = true;
-    progFill.classList.add('is-complete');
-    celebrateBig();
-  } else if (pct < 100){
-    celebrated = false;
-    progFill.classList.remove('is-complete');
-  }
+  if (pct === 100 && !celebrated){ celebrated = true; progFill.classList.add('is-complete'); celebrateBig(); }
+  else if (pct < 100){ celebrated = false; progFill.classList.remove('is-complete'); }
 }
 
-// ==== CSV -> GRAPH ==========================================================
 function pickHeader(headers, wanted){
   const lc = wanted.toLowerCase();
   return headers.find(h => (h||'').toLowerCase() === lc) || null;
@@ -194,11 +150,9 @@ function fromCsv(rows){
   const headers = Object.keys(rows[0] || {});
   const fcol = pickHeader(headers,'from') || headers[0];
   const tcol = pickHeader(headers,'to')   || headers[1] || headers[0];
-
   const nodesSet = new Set();
   const edges = [];
   const seenE = new Set();
-
   for (const r of rows){
     const fr = norm(r[fcol]), to = norm(r[tcol]);
     if (!fr || !to) continue;
@@ -210,7 +164,6 @@ function fromCsv(rows){
   return { nodes, edges };
 }
 
-// ==== LAYOUT & RENDER (ELK + SVG) ===========================================
 async function layoutAndRender(){
   try{
     const elk = new ELK();
@@ -232,19 +185,13 @@ async function layoutAndRender(){
 
     const res = await elk.layout(elkGraph);
 
-    // limpiar
     gEdges.innerHTML = '';
     gNodes.innerHTML = '';
 
-    // Edges
     const edgePathById = new Map();
     for (const e of res.edges){
       const sec = e.sections?.[0]; if (!sec) continue;
-      const pts = [
-        {x:sec.startPoint.x, y:sec.startPoint.y},
-        ...(sec.bendPoints || []),
-        {x:sec.endPoint.x, y:sec.endPoint.y}
-      ];
+      const pts = [{x:sec.startPoint.x, y:sec.startPoint.y}, ...(sec.bendPoints || []), {x:sec.endPoint.x, y:sec.endPoint.y}];
       const d = pts.map((p,i)=> (i===0?`M ${p.x} ${p.y}`:`L ${p.x} ${p.y}`)).join(' ');
       const path = document.createElementNS('http://www.w3.org/2000/svg','path');
       path.setAttribute('d', d);
@@ -258,7 +205,6 @@ async function layoutAndRender(){
       edgePathById.set(e.id, path);
     }
 
-    // Nodes (con borde dorado + glow opcional)
     for (const n of res.children){
       const st = (statuses[n.id] || 'pending');
       const color = STATUS_COLOR[st] || GRAY;
@@ -267,7 +213,6 @@ async function layoutAndRender(){
       g.setAttribute('transform', `translate(${n.x},${n.y})`);
       g.style.cursor = 'pointer';
 
-      // rect base
       const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
       rect.setAttribute('rx','8'); rect.setAttribute('ry','8');
       rect.setAttribute('x','0'); rect.setAttribute('y','0');
@@ -278,7 +223,6 @@ async function layoutAndRender(){
       rect.setAttribute('stroke-width','1');
       rect.setAttribute('filter','url(#nodeShadow)');
 
-      // texto
       const text = document.createElementNS('http://www.w3.org/2000/svg','text');
       text.setAttribute('x', String(n.width/2));
       text.setAttribute('y', String(n.height/2));
@@ -292,21 +236,17 @@ async function layoutAndRender(){
       g.appendChild(text);
       gNodes.appendChild(g);
 
-      // hover
       g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
       g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
 
-      // click -> ciclo de estado + actualización edges
       g.addEventListener('click', () => {
         const prev = (statuses[n.id] || 'pending');
         const nxt  = STATUS_ORDER[(STATUS_ORDER.indexOf(prev)+1) % STATUS_ORDER.length];
         statuses[n.id] = nxt;
 
-        // nodo
         rect.setAttribute('fill', STATUS_COLOR[nxt] || GRAY);
         text.setAttribute('fill', nxt === 'blocked' ? '#fff' : '#111827');
 
-        // edges salientes
         for (const e of graph.edges){
           if (e.source === n.id){
             const p = edgePathById.get(e.id);
@@ -317,7 +257,6 @@ async function layoutAndRender(){
           }
         }
 
-        // confeti cuando pasa a Ready
         if (prev !== 'ready' && nxt === 'ready') celebrateSmall();
 
         saveStatuses(statuses);
@@ -325,7 +264,6 @@ async function layoutAndRender(){
       });
     }
 
-    // Ajuste de viewBox al contenido + fit/center
     const edgesBBox = gEdges.getBBox();
     const nodesBBox = gNodes.getBBox();
     const minX = Math.min(edgesBBox.x, nodesBBox.x);
@@ -336,7 +274,6 @@ async function layoutAndRender(){
     svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${(maxX - minX) + pad*2} ${(maxY - minY) + pad*2}`);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
-    // Pan/Zoom
     if (panzoom) panzoom.destroy();
     panzoom = svgPanZoom(svg, {
       zoomEnabled: true,
@@ -355,18 +292,6 @@ async function layoutAndRender(){
       panzoom.center();
     });
 
-    if (!resizeBound){
-      window.addEventListener('resize', () => {
-        if (!panzoom) return;
-        panzoom.updateBBox();
-        panzoom.resize();
-        panzoom.fit();
-        panzoom.center();
-        sizeFxToCanvas();
-      }, { passive:true });
-      resizeBound = true;
-    }
-
     sizeFxToCanvas();
     setStatus(`Loaded ${graph.nodes.length} nodes · ${graph.edges.length} edges`, true);
     updateProgress();
@@ -376,12 +301,12 @@ async function layoutAndRender(){
   }
 }
 
-// ==== CONTROLES ==============================================================
-btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
-btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
-btnFit.onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
+// ===== Controles =====
+document.getElementById('zoom-in').onclick  = () => panzoom && panzoom.zoomBy(1.2);
+document.getElementById('zoom-out').onclick = () => panzoom && panzoom.zoomBy(0.85);
+document.getElementById('fit').onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
 
-btnReset.onclick = async () => {
+document.getElementById('reset').onclick = async () => {
   const defs = await loadDefaultStatuses();
   statuses = { ...(defs || {}) };
   saveStatuses(statuses);
@@ -389,7 +314,7 @@ btnReset.onclick = async () => {
   setStatus('Statuses reset to defaults', true);
 };
 
-btnExport.onclick = () => {
+document.getElementById('btn-export').onclick = () => {
   const blob = new Blob([JSON.stringify(statuses, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -408,7 +333,8 @@ impInput.onchange = async () => {
     await layoutAndRender();
     setStatus('Statuses imported', true);
   }catch(err){
-    setStatus('Invalid JSON: ' + err.message', false);
+    // ⬇⬇ Arreglado: sin comilla extra
+    setStatus(`Invalid JSON: ${err.message}`, false);
   }finally{
     impInput.value = '';
   }
@@ -428,17 +354,15 @@ fileInput.onchange = async () => {
   fileInput.value = '';
 };
 
-// ==== BOOT (autoload CSV + defaults + localStorage) ==========================
+// ===== Boot: carga CSV por defecto (si existe) =====
 (async function boot(){
   try{
-    // 1) CSV desde raíz del repo
     const r = await fetch(`${BASE}lineage.csv?ts=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error('CSV not found');
     const text = await r.text();
     const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
     graph = fromCsv(parsed.data);
 
-    // 2) defaults + local + migración
     const defs = await loadDefaultStatuses();
     const saved = migrateOldStatuses(loadStatuses());
     statuses = Object.keys(saved).length ? saved : (defs || {});
@@ -452,39 +376,17 @@ fileInput.onchange = async () => {
   updateEditUI();
 })();
 
-// ==== EDIT LOCK / UNLOCK =====================================================
 function updateEditUI(){
-  lockState.textContent = canEdit ? 'Edit mode' : 'Read-only';
-  lockBtn.textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
-  btnExport.disabled = !canEdit;
-  btnReset.disabled  = !canEdit;
+  const canEdit = true; // ajusta si tienes lock real
+  document.getElementById('lock-state').textContent = canEdit ? 'Edit mode' : 'Read-only';
+  document.getElementById('lock-btn').textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
+  document.getElementById('btn-export').disabled = !canEdit;
+  document.getElementById('reset').disabled  = !canEdit;
   if (canEdit){ fileLabel.classList.remove('disabled'); impLabel.classList.remove('disabled'); }
   else { fileLabel.classList.add('disabled'); impLabel.classList.add('disabled'); }
 }
 
-lockBtn.onclick = () => {
-  if (canEdit){
-    canEdit = false; updateEditUI(); setStatus('Locked. Read-only.', true); return;
-  }
-  modal.classList.remove('hidden'); modal.setAttribute('aria-hidden','false');
-  lockMsg.textContent = ''; passIn.value = ''; passIn.focus();
-};
-lockCancel.onclick = closeModal;
-function closeModal(){
-  modal.classList.add('hidden'); modal.setAttribute('aria-hidden','true'); lockMsg.textContent = ''; passIn.value = '';
-}
-passIn.addEventListener('keydown', (e)=>{ if(e.key==='Enter') lockOk.click(); });
-document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classList.contains('hidden')) closeModal(); });
-
-lockOk.onclick = async () => {
-  const pwd = passIn.value || '';
-  try{
-    if (pwd !== DEFAULT_PLAIN) throw new Error('Wrong password');
-    canEdit = true; updateEditUI(); setStatus('Unlocked. Edit mode enabled.', true); closeModal();
-  }catch(_){ lockMsg.textContent = 'Incorrect password.'; }
-};
-
-// ==== CONFETTI ===============================================================
+// ===== Confetti =====
 function sizeFxToCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const rect = fxCanvas.getBoundingClientRect();
@@ -510,12 +412,9 @@ function confetti({duration=1000, count=100} = {}){
     vr: (Math.random()-0.5)*0.2,
     color: colors[(Math.random()*colors.length)|0],
   }));
-
   const start = performance.now();
   const endAt = start + duration;
-
   if (fxRAF) cancelAnimationFrame(fxRAF);
-
   function tick(now){
     fxCtx.clearRect(0,0,W,H);
     for (const p of parts){

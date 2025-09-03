@@ -5,71 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>P&L Migration — AWS → GCP</title>
 
-    <!-- Favicons (en /public/) -->
-    <link rel="icon" href="public/glovo.svg?v=10" type="image/svg+xml">
-    <link rel="mask-icon" href="public/glovo.svg?v=10" color="#FFC244">
-    <meta name="theme-color" content="#FFC244">
-
-    <!-- Meta no-cache (no cambia headers de Pages, pero ayuda) -->
-    <meta http-equiv="Cache-Control" content="no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-
-    <!-- ================== ANTI-CACHÉ DE HTML ==================
-         Cambia V en cada deploy. Este bloque:
-         1) Fuerza la URL a llevar ?v=V para bustear el HTML.
-         2) Purga Service Workers y Cache Storage una vez por versión.
-    -->
-    <script>
-        (function () {
-          const V = '10'; // ⬅⬅⬅ SUBE ESTE NÚMERO EN CADA DEPLOY
-
-          // 1) Si la URL no tiene ?v=V, redirige con ?v=V (bust HTML cache)
-          var u = new URL(window.location.href);
-          if (u.searchParams.get('v') !== V) {
-            u.searchParams.set('v', V);
-            window.location.replace(u.toString()); // sin nueva entrada en historial
-          }
-
-          // 2) Purga SW + Cache Storage una vez por versión (por si existieran)
-          var purgeKey = 'purged::' + V;
-          if (!localStorage.getItem(purgeKey)) {
-            (async () => {
-              try {
-                if ('serviceWorker' in navigator) {
-                  const regs = await navigator.serviceWorker.getRegistrations();
-                  await Promise.all(regs.map(r => r.unregister()));
-                }
-                if ('caches' in window) {
-                  const keys = await caches.keys();
-                  await Promise.all(keys.map(k => caches.delete(k)));
-                }
-              } catch (e) {
-                console.warn('Purge cache/SW failed:', e);
-              } finally {
-                localStorage.setItem(purgeKey, '1');
-              }
-            })();
-          }
-        })();
-    </script>
-    <!-- ================== /ANTI-CACHÉ DE HTML ================== -->
-
-    <!-- ======== LIMPIEZA DE ESTADO LOCAL AL CAMBIAR VERSIÓN ======== -->
-    <script>
-        (function(){
-          const APP_VERSION = '10'; // ⬅⬅⬅ sube en cada deploy (igual que V)
-          const SHOULD_CLEAR = (k) => /^lineage-statuses-v\d+::/.test(k) || /^appVersion$/.test(k);
-          try {
-            const prev = localStorage.getItem('appVersion');
-            if (prev !== APP_VERSION) {
-              Object.keys(localStorage).forEach(k => { if (SHOULD_CLEAR(k)) localStorage.removeItem(k); });
-              localStorage.setItem('appVersion', APP_VERSION);
-            }
-          } catch(e) { /* ignore */ }
-        })();
-    </script>
-    <!-- ======== /LIMPIEZA DE ESTADO LOCAL ======== -->
+    <!-- Favicons (desde /public, Vite los copia a la raíz de dist) -->
+    <link rel="icon" href="glovo.svg?v=10" type="image/svg+xml">
+    <link rel="mask-icon" href="glovo.svg?v=10" color="#FFC244">
+    <meta name="theme-color" content="#FFC244" />
 
     <style>
         :root{
@@ -113,9 +52,8 @@
         .canvas .inner::after{
           content:""; position:absolute; inset:0; pointer-events:none;
           background: var(--glovo-yellow);
-          /* SIN barra inicial + versión para forzar recarga del SVG */
-          -webkit-mask: url("public/glovo.svg?v=10") center/320px no-repeat;
-                  mask: url("public/glovo.svg?v=10") center/320px no-repeat;
+          -webkit-mask: url("glovo.svg?v=10") center/320px no-repeat;
+                  mask: url("glovo.svg?v=10") center/320px no-repeat;
           opacity:.12;
         }
         .fx{ position:absolute; inset:0; pointer-events:none; border-radius:var(--radius); }
@@ -148,7 +86,7 @@
     <header class="card">
         <div class="head-left">
             <div class="brand">
-                <img class="logo" src="public/glovo.svg?v=10" alt="Glovo" title="Glovo" onerror="this.style.display='none'">
+                <img class="logo" src="glovo.svg?v=10" alt="Glovo" title="Glovo" onerror="this.style.display='none'">
                 <div class="title">
                     <h1>P&L Migration — AWS → GCP</h1>
                     <small>Interactive lineage tracker · click nodes to cycle status</small>
@@ -177,7 +115,7 @@
         <div class="inner">
             <svg id="svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
                 <defs>
-                    <!-- tus defs como antes -->
+                    <!-- (tus defs SVG tal cual) -->
                 </defs>
                 <g id="edges"></g>
                 <g id="nodes"></g>
@@ -223,7 +161,7 @@
     </div>
 </div>
 
-<!-- JS en /src + versión -->
-<script type="module" src="./src/main.js?v=10"></script>
+<!-- EN VITE: sin query string -->
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -39,14 +39,25 @@ const EDGE_MARKER  = {
   ready: 'url(#arrow-ready)'
 };
 
-// ==== BASE URL (GH Pages) & STORAGE KEY =====================================
-const BASE = import.meta.env.BASE_URL || '/';
+// ==== BASE URL (sin Vite) & STORAGE KEY =====================================
+// Deducción robusta del "base" del repo en GitHub Pages (p.ej. /pnl-lineage-view/)
+const BASE = (() => {
+  try {
+    const p = window.location.pathname;
+    // si termina en /index.html -> recorta hasta la carpeta
+    if (p.endsWith('.html')) return p.replace(/\/[^\/]*$/, '/') ;
+    // asegura que termina en '/'
+    return p.endsWith('/') ? p : (p.substring(0, p.lastIndexOf('/') + 1));
+  } catch { return '/'; }
+})();
+
+// NOTA: sube la versión si quieres “empezar de cero” sin limpiar storage
 const STORE_KEY = 'lineage-statuses-v3::' + BASE;
+
+// defaults desde raíz del repo (no en /public)
 const DEFAULTS_URL = `${BASE}lineage-statuses.json`;
 
 // ==== PASSWORD / EDIT LOCK ===================================================
-const EDIT_HASH   = import.meta.env.VITE_EDIT_HASH  || null; // SHA-256 hex
-const EDIT_PLAIN  = import.meta.env.VITE_EDIT_PLAIN || null; // plain text
 const DEFAULT_PLAIN = 'key';
 
 // ==== STATE =================================================================
@@ -132,7 +143,7 @@ function migrateOldStatuses(obj){
   return out;
 }
 
-// Defaults desde /public/lineage-statuses.json
+// Defaults desde /lineage-statuses.json
 async function loadDefaultStatuses(){
   try{
     const r = await fetch(DEFAULTS_URL, { cache:'no-store' });
@@ -152,13 +163,6 @@ function measureTextSize(text){
   const h = 16;
   const padX = 12, padY = 8;
   return { width: w + padX*2, height: h + padY*2 };
-}
-
-// SHA-256 helper (para EDIT_HASH)
-async function sha256Hex(s){
-  const enc = new TextEncoder().encode(s);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
 // ==== PROGRESO (solo Ready/verde) ===========================================
@@ -254,11 +258,10 @@ async function layoutAndRender(){
       edgePathById.set(e.id, path);
     }
 
-    // Nodes (con borde dorado + glow para finance_financial_metrics)
+    // Nodes (con borde dorado + glow opcional)
     for (const n of res.children){
       const st = (statuses[n.id] || 'pending');
       const color = STATUS_COLOR[st] || GRAY;
-      const isMilestone = (n.id === 'finance_financial_metrics');
 
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('transform', `translate(${n.x},${n.y})`);
@@ -275,22 +278,7 @@ async function layoutAndRender(){
       rect.setAttribute('stroke-width','1');
       rect.setAttribute('filter','url(#nodeShadow)');
 
-      // overlay dorado (más grueso + glow; no captura eventos)
-      let hl = null;
-      if (isMilestone){
-        hl = document.createElementNS('http://www.w3.org/2000/svg','rect');
-        hl.setAttribute('x','-2'); hl.setAttribute('y','-2');
-        hl.setAttribute('width', String(n.width+4));
-        hl.setAttribute('height',String(n.height+4));
-        hl.setAttribute('rx','11'); hl.setAttribute('ry','11');
-        hl.setAttribute('fill','none');
-        hl.setAttribute('stroke','url(#goldStroke)');
-        hl.setAttribute('stroke-width','4.5');      // borde más presente
-        hl.setAttribute('filter','url(#goldGlow)');  // glow dorado
-        hl.setAttribute('pointer-events','none');
-      }
-
-      // texto (blanco solo si está Blocked)
+      // texto
       const text = document.createElementNS('http://www.w3.org/2000/svg','text');
       text.setAttribute('x', String(n.width/2));
       text.setAttribute('y', String(n.height/2));
@@ -300,21 +288,16 @@ async function layoutAndRender(){
       text.setAttribute('fill', st === 'blocked' ? '#fff' : '#111827');
       text.textContent = n.id;
 
-      // apilar
       g.appendChild(rect);
-      if (hl) g.appendChild(hl);
       g.appendChild(text);
       gNodes.appendChild(g);
 
-      // hover (no tocar el borde dorado)
-      if (!isMilestone){
-        g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
-        g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
-      }
+      // hover
+      g.addEventListener('mouseenter', ()=> rect.setAttribute('stroke', '#94a3b8'));
+      g.addEventListener('mouseleave', ()=> rect.setAttribute('stroke', '#d1d5db'));
 
       // click -> ciclo de estado + actualización edges
       g.addEventListener('click', () => {
-        if (!canEdit){ setStatus('Read-only. Click "Unlock" to enable editing.', false); return; }
         const prev = (statuses[n.id] || 'pending');
         const nxt  = STATUS_ORDER[(STATUS_ORDER.indexOf(prev)+1) % STATUS_ORDER.length];
         statuses[n.id] = nxt;
@@ -342,7 +325,7 @@ async function layoutAndRender(){
       });
     }
 
-    // Ajuste de viewBox al contenido + fit/center en el siguiente frame
+    // Ajuste de viewBox al contenido + fit/center
     const edgesBBox = gEdges.getBBox();
     const nodesBBox = gNodes.getBBox();
     const minX = Math.min(edgesBBox.x, nodesBBox.x);
@@ -365,7 +348,6 @@ async function layoutAndRender(){
       preventMouseEventsDefault: true
     });
 
-    // Esperar al siguiente frame para que BBox y viewBox estén listos
     requestAnimationFrame(() => {
       panzoom.updateBBox();
       panzoom.resize();
@@ -373,7 +355,6 @@ async function layoutAndRender(){
       panzoom.center();
     });
 
-    // reencajar al redimensionar (una sola vez)
     if (!resizeBound){
       window.addEventListener('resize', () => {
         if (!panzoom) return;
@@ -401,7 +382,6 @@ btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
 btnFit.onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
 
 btnReset.onclick = async () => {
-  if (!canEdit){ setStatus('Read-only. Unlock to reset.', false); return; }
   const defs = await loadDefaultStatuses();
   statuses = { ...(defs || {}) };
   saveStatuses(statuses);
@@ -410,7 +390,6 @@ btnReset.onclick = async () => {
 };
 
 btnExport.onclick = () => {
-  if (!canEdit){ setStatus('Read-only. Unlock to export.', false); return; }
   const blob = new Blob([JSON.stringify(statuses, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -420,7 +399,6 @@ btnExport.onclick = () => {
 };
 
 impInput.onchange = async () => {
-  if (!canEdit){ setStatus('Read-only. Unlock to import.', false); impInput.value=''; return; }
   const f = impInput.files?.[0]; if (!f) return;
   try{
     const txt = await f.text();
@@ -430,14 +408,13 @@ impInput.onchange = async () => {
     await layoutAndRender();
     setStatus('Statuses imported', true);
   }catch(err){
-    setStatus('Invalid JSON: ' + err.message, false);
+    setStatus('Invalid JSON: ' + err.message', false);
   }finally{
     impInput.value = '';
   }
 };
 
 fileInput.onchange = async () => {
-  if (!canEdit){ setStatus('Read-only. Unlock to upload.', false); fileInput.value=''; return; }
   const f = fileInput.files?.[0]; if (!f) return;
   Papa.parse(f, {
     header: true,
@@ -454,7 +431,7 @@ fileInput.onchange = async () => {
 // ==== BOOT (autoload CSV + defaults + localStorage) ==========================
 (async function boot(){
   try{
-    // 1) CSV
+    // 1) CSV desde raíz del repo
     const r = await fetch(`${BASE}lineage.csv?ts=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error('CSV not found');
     const text = await r.text();
@@ -502,9 +479,7 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !modal.classL
 lockOk.onclick = async () => {
   const pwd = passIn.value || '';
   try{
-    if (EDIT_HASH){ const hex = await sha256Hex(pwd); if (hex !== EDIT_HASH) throw new Error('Wrong password'); }
-    else if (EDIT_PLAIN){ if (pwd !== EDIT_PLAIN) throw new Error('Wrong password'); }
-    else { if (pwd !== DEFAULT_PLAIN) throw new Error('Wrong password'); }
+    if (pwd !== DEFAULT_PLAIN) throw new Error('Wrong password');
     canEdit = true; updateEditUI(); setStatus('Unlocked. Edit mode enabled.', true); closeModal();
   }catch(_){ lockMsg.textContent = 'Incorrect password.'; }
 };

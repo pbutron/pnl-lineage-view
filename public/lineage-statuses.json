@@ -31,7 +31,7 @@
   "growth__gc_customer_incentives": "ready",
   "growth__prime_vendor_commission": "ready",
   "growth_adjust": "implemented_reconciled",
-  "growth_discounts": "implemented_reconciled",
+  "growth_discounts": "ready",
   "growth_pricing_discounts": "implemented",
   "growth_pricing_sources": "ready",
   "growth_prime": "implemented",

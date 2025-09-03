@@ -32,9 +32,12 @@ const EDGE_MARKER  = {
   ready: 'url(#arrow-ready)'
 };
 
-// ===== BASE & storage (Vite friendly) =====
+// ===== BASE & storage (Vite) =====
 const BASE = import.meta.env.BASE_URL || '/';
-const STORE_KEY = 'lineage-statuses-v3::' + BASE;
+// toma la versión inyectada en index.html (window.APP_VERSION)
+const APP_VERSION = (typeof window !== 'undefined' && window.APP_VERSION) ? window.APP_VERSION : '0';
+// clave namespaced por versión + base → evita arrastrar estados de builds previos
+const STORE_KEY = `lineage-statuses-v3::${APP_VERSION}::${BASE}`;
 const DEFAULTS_URL = `${BASE}lineage-statuses.json`;
 
 // ===== Password / edición =====
@@ -302,11 +305,11 @@ async function layoutAndRender(){
 }
 
 // ===== Controles =====
-document.getElementById('zoom-in').onclick  = () => panzoom && panzoom.zoomBy(1.2);
-document.getElementById('zoom-out').onclick = () => panzoom && panzoom.zoomBy(0.85);
-document.getElementById('fit').onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
+btnZoomIn.onclick  = () => panzoom && panzoom.zoomBy(1.2);
+btnZoomOut.onclick = () => panzoom && panzoom.zoomBy(0.85);
+btnFit.onclick     = () => panzoom && (panzoom.updateBBox(), panzoom.resize(), panzoom.fit(), panzoom.center());
 
-document.getElementById('reset').onclick = async () => {
+btnReset.onclick = async () => {
   const defs = await loadDefaultStatuses();
   statuses = { ...(defs || {}) };
   saveStatuses(statuses);
@@ -314,7 +317,7 @@ document.getElementById('reset').onclick = async () => {
   setStatus('Statuses reset to defaults', true);
 };
 
-document.getElementById('btn-export').onclick = () => {
+btnExport.onclick = () => {
   const blob = new Blob([JSON.stringify(statuses, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -333,7 +336,7 @@ impInput.onchange = async () => {
     await layoutAndRender();
     setStatus('Statuses imported', true);
   }catch(err){
-    // ⬇⬇ Arreglado: sin comilla extra
+    // (fix de comillas)
     setStatus(`Invalid JSON: ${err.message}`, false);
   }finally{
     impInput.value = '';
@@ -377,11 +380,11 @@ fileInput.onchange = async () => {
 })();
 
 function updateEditUI(){
-  const canEdit = true; // ajusta si tienes lock real
+  // ajusta si usas un lock real
   document.getElementById('lock-state').textContent = canEdit ? 'Edit mode' : 'Read-only';
   document.getElementById('lock-btn').textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
-  document.getElementById('btn-export').disabled = !canEdit;
-  document.getElementById('reset').disabled  = !canEdit;
+  btnExport.disabled = !canEdit;
+  btnReset.disabled  = !canEdit;
   if (canEdit){ fileLabel.classList.remove('disabled'); impLabel.classList.remove('disabled'); }
   else { fileLabel.classList.add('disabled'); impLabel.classList.add('disabled'); }
 }

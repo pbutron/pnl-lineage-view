@@ -5,15 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>P&L Migration — AWS → GCP</title>
 
-    <!-- Favicons (desde /public, Vite los copia a la raíz de dist) -->
-    <link rel="icon" href="glovo.svg?v=10" type="image/svg+xml">
-    <link rel="mask-icon" href="glovo.svg?v=10" color="#FFC244">
+    <!-- Favicons (desde /public, Vite los copia a dist/) -->
+    <link rel="icon" href="glovo.svg?v=12" type="image/svg+xml">
+    <link rel="mask-icon" href="glovo.svg?v=12" color="#FFC244">
     <meta name="theme-color" content="#FFC244" />
+
+    <!-- Limpieza de estado local en cada deploy -->
+    <script>
+
+        window.APP_VERSION = '12';
+
+        (function(){
+          const V = window.APP_VERSION;
+          const SHOULD_CLEAR = (k) =>
+            /^lineage-statuses-v\d+::/.test(k) || // estados antiguos
+            k === 'appVersion';                    // marcador anterior
+
+          try {
+            const prev = localStorage.getItem('appVersion');
+            if (prev !== V) {
+              Object.keys(localStorage).forEach(k => { if (SHOULD_CLEAR(k)) localStorage.removeItem(k); });
+              localStorage.setItem('appVersion', V);
+            }
+          } catch(e) { /* ignore en modo privado / bloqueo */ }
+        })();
+    </script>
 
     <style>
         :root{
           --glovo-yellow:#FFC244; --glovo-green:#00A082;
-          --orange:#f59e0b; --red:#ef4444; --red-strong:#b91c1c;
+          --orange:#F97316; --red:#ef4444; --red-strong:#7F1D1D;
           --ink:#111827; --muted:#6b7280; --border:#e5e7eb; --panel:#ffffff; --bg:#f8fafc;
           --btn:#fff; --btn-border:#ddd; --shadow:0 1px 2px rgba(0,0,0,0.06); --radius:12px;
         }
@@ -52,8 +73,8 @@
         .canvas .inner::after{
           content:""; position:absolute; inset:0; pointer-events:none;
           background: var(--glovo-yellow);
-          -webkit-mask: url("glovo.svg?v=10") center/320px no-repeat;
-                  mask: url("glovo.svg?v=10") center/320px no-repeat;
+          -webkit-mask: url("glovo.svg?v=12") center/320px no-repeat;
+                  mask: url("glovo.svg?v=12") center/320px no-repeat;
           opacity:.12;
         }
         .fx{ position:absolute; inset:0; pointer-events:none; border-radius:var(--radius); }
@@ -86,7 +107,7 @@
     <header class="card">
         <div class="head-left">
             <div class="brand">
-                <img class="logo" src="glovo.svg?v=10" alt="Glovo" title="Glovo" onerror="this.style.display='none'">
+                <img class="logo" src="glovo.svg?v=12" alt="Glovo" title="Glovo" onerror="this.style.display='none'">
                 <div class="title">
                     <h1>P&L Migration — AWS → GCP</h1>
                     <small>Interactive lineage tracker · click nodes to cycle status</small>
@@ -108,14 +129,14 @@
 
     <div class="card progress" id="progress">
         <div class="fill" id="prog-fill"></div>
-        <div class="label" id="prog-label">Ready (SoT) 0%</div>
+        <div class="label" id="prog-label">P&L Progress 0%</div>
     </div>
 
     <div class="card canvas">
         <div class="inner">
             <svg id="svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
                 <defs>
-                    <!-- (tus defs SVG tal cual) -->
+                    <!-- tus defs SVG tal cual -->
                 </defs>
                 <g id="edges"></g>
                 <g id="nodes"></g>
@@ -161,7 +182,6 @@
     </div>
 </div>
 
-<!-- EN VITE: sin query string -->
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -383,7 +383,7 @@ function updateEditUI(){
   // ajusta si usas un lock real
   document.getElementById('lock-state').textContent = canEdit ? 'Edit mode' : 'Read-only';
   document.getElementById('lock-btn').textContent   = canEdit ? '🔓 Lock' : '🔒 Unlock';
-  btnExport.disabled = !canEdit;
+ // btnExport.disabled = !canEdit;
   btnReset.disabled  = !canEdit;
   if (canEdit){ fileLabel.classList.remove('disabled'); impLabel.classList.remove('disabled'); }
   else { fileLabel.classList.add('disabled'); impLabel.classList.add('disabled'); }
